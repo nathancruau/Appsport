@@ -1,4 +1,4 @@
-import * as SQLite from 'expo-sqlite/legacy';
+import * as SQLite from 'expo-sqlite';
 import { Exercise, Workout, WorkoutSet, PersonalRecord } from '../types';
 import { estimateOneRM } from '../utils/calculations';
 
