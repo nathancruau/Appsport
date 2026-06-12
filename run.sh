@@ -14,15 +14,14 @@ if [ -n "$CODESPACE_NAME" ]; then
 
   echo ""
   echo "================================================"
-  echo " Dans Expo Go > 'Enter URL manually' :"
+  echo " Ouvre cette URL dans le navigateur du telephone :"
   echo ""
-  echo "   exp://$HOST"
+  echo "   https://$HOST"
   echo ""
   echo "================================================"
   echo ""
 
-  REACT_NATIVE_PACKAGER_HOSTNAME="$HOST" npx expo start --port 8081
+  npx expo start --web --port 8081
 else
-  npm install -g @expo/ngrok@^4.1.0 2>/dev/null || true
-  npx expo start --tunnel
+  npx expo start --web --port 8081
 fi

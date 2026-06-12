@@ -20,6 +20,11 @@
         "backgroundColor": "#0F0F0F"
       },
       "package": "com.nathancruau.appsport"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "name": "ApSport"
     }
   }
 }
