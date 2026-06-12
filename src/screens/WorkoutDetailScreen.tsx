@@ -1,24 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { RouteProp, useRoute } from '@react-navigation/native';
-import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
 import { RootStackParamList, Workout, WorkoutSet } from '../types';
-import { getWorkoutDetail, WorkoutExercise } from '../database/database';
+import { getWorkoutDetail, WorkoutExerciseDetail } from '../database/database';
 import { formatDateFull, formatDuration, muscleGroupLabel, formatWeight } from '../utils/calculations';
 
 type Route = RouteProp<RootStackParamList, 'WorkoutDetail'>;
 
 export default function WorkoutDetailScreen() {
   const { params } = useRoute<Route>();
-  const db = useSQLiteContext();
   const [workout, setWorkout] = useState<Workout | null>(null);
-  const [exercises, setExercises] = useState<(WorkoutExercise & { exerciseName: string; muscleGroup: string; sets: WorkoutSet[] })[]>([]);
+  const [exercises, setExercises] = useState<WorkoutExerciseDetail[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getWorkoutDetail(db, params.workoutId).then(({ workout, exercises }) => {
+    getWorkoutDetail(params.workoutId).then(({ workout, exercises }) => {
       setWorkout(workout);
       setExercises(exercises);
       setLoading(false);

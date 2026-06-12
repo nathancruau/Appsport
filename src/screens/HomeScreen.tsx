@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { RootStackParamList, Workout } from '../types';
@@ -17,7 +16,6 @@ type Props = { navigation: NativeStackNavigationProp<RootStackParamList> };
 type WorkoutItem = Workout & { exerciseCount: number; totalVolume: number };
 
 export default function HomeScreen({ navigation }: Props) {
-  const db = useSQLiteContext();
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,14 +23,14 @@ export default function HomeScreen({ navigation }: Props) {
     useCallback(() => {
       let active = true;
       setLoading(true);
-      getRecentWorkouts(db, 10).then((data) => {
+      getRecentWorkouts(10).then((data) => {
         if (active) {
           setWorkouts(data);
           setLoading(false);
         }
       });
       return () => { active = false; };
-    }, [db])
+    }, [])
   );
 
   const thisWeekCount = workouts.filter((w) => {

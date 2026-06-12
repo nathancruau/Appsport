@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
 import { Exercise, RootStackParamList } from '../types';
@@ -15,7 +14,6 @@ import { muscleGroupLabel } from '../utils/calculations';
 const MUSCLE_GROUPS = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core', 'cardio', 'other'];
 
 export default function ExercisesScreen() {
-  const db = useSQLiteContext();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [search, setSearch] = useState('');
@@ -26,9 +24,9 @@ export default function ExercisesScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      getAllExercises(db).then((data) => { if (active) setExercises(data); });
+      getAllExercises().then((data) => { if (active) setExercises(data); });
       return () => { active = false; };
-    }, [db])
+    }, [])
   );
 
   const filtered = exercises.filter(
@@ -49,8 +47,8 @@ export default function ExercisesScreen() {
       Alert.alert('Exercice déjà existant');
       return;
     }
-    await createExercise(db, name, newMuscle, 'strength');
-    const updated = await getAllExercises(db);
+    await createExercise(name, newMuscle, 'strength');
+    const updated = await getAllExercises();
     setExercises(updated);
     setShowAdd(false);
     setNewName('');

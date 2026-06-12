@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
 import { RouteProp, useRoute } from '@react-navigation/native';
-import { useSQLiteContext } from 'expo-sqlite';
 import { LineChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
@@ -25,12 +24,11 @@ interface HistoryEntry {
 
 export default function ExerciseDetailScreen() {
   const { params } = useRoute<Route>();
-  const db = useSQLiteContext();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getExerciseHistory(db, params.exerciseId).then((data) => {
+    getExerciseHistory(params.exerciseId).then((data) => {
       setHistory(data);
       setLoading(false);
     });

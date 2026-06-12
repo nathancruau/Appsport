@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useSQLiteContext } from 'expo-sqlite';
 import { BarChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
@@ -12,7 +11,6 @@ import { muscleGroupLabel, formatDate, formatWeight } from '../utils/calculation
 const { width } = Dimensions.get('window');
 
 export default function StatsScreen() {
-  const db = useSQLiteContext();
   const [prs, setPrs] = useState<(PersonalRecord & { exerciseName: string; muscleGroup: string })[]>([]);
   const [weeklyVol, setWeeklyVol] = useState<{ week: string; volume: number; count: number }[]>([]);
   const [totals, setTotals] = useState({ totalWorkouts: 0, totalVolume: 0, totalSets: 0 });
@@ -22,9 +20,9 @@ export default function StatsScreen() {
     useCallback(() => {
       let active = true;
       Promise.all([
-        getAllPersonalRecords(db),
-        getWeeklyVolume(db),
-        getTotalStats(db),
+        getAllPersonalRecords(),
+        getWeeklyVolume(),
+        getTotalStats(),
       ]).then(([p, w, t]) => {
         if (active) {
           setPrs(p);
@@ -34,7 +32,7 @@ export default function StatsScreen() {
         }
       });
       return () => { active = false; };
-    }, [db])
+    }, [])
   );
 
   if (loading) return <ActivityIndicator color={theme.colors.primary} style={{ flex: 1, backgroundColor: theme.colors.background }} />;

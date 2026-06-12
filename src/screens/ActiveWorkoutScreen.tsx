@@ -4,7 +4,6 @@ import {
   TextInput, Modal, ScrollView, Alert, KeyboardAvoidingView,
   Platform, SectionList,
 } from 'react-native';
-import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { theme, muscleColors } from '../theme';
@@ -103,7 +102,6 @@ function reducer(state: State, action: Action): State {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ActiveWorkoutScreen({ navigation }: any) {
-  const db = useSQLiteContext();
   const [state, dispatch] = useReducer(reducer, {
     name: '',
     exercises: [],
@@ -116,16 +114,16 @@ export default function ActiveWorkoutScreen({ navigation }: any) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    getAllExercises(db).then(setAllExercises);
+    getAllExercises().then(setAllExercises);
     timerRef.current = setInterval(() => dispatch({ type: 'TICK' }), 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [db]);
+  }, []);
 
   const addExercise = useCallback(async (exercise: Exercise) => {
-    const prev = await getLastWorkoutSets(db, exercise.id);
+    const prev = await getLastWorkoutSets(exercise.id);
     dispatch({ type: 'ADD_EXERCISE', exercise, previousSets: prev });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [db]);
+  }, []);
 
   const finishWorkout = async () => {
     if (state.exercises.length === 0) {
@@ -148,7 +146,7 @@ export default function ActiveWorkoutScreen({ navigation }: any) {
           setSaving(true);
           try {
             const durationMin = Math.round(state.elapsedSeconds / 60);
-            await saveWorkout(db, {
+            await saveWorkout({
               name: state.name.trim() || null,
               date: todayISO(),
               duration: durationMin,

@@ -2,7 +2,6 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { RootStackParamList, Workout } from '../types';
@@ -12,7 +11,6 @@ import { formatDate, formatDuration } from '../utils/calculations';
 type WorkoutItem = Workout & { exerciseCount: number; totalVolume: number };
 
 export default function HistoryScreen() {
-  const db = useSQLiteContext();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,11 +18,11 @@ export default function HistoryScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      getRecentWorkouts(db, 100).then((data) => {
+      getRecentWorkouts(100).then((data) => {
         if (active) { setWorkouts(data); setLoading(false); }
       });
       return () => { active = false; };
-    }, [db])
+    }, [])
   );
 
   // Group by month
