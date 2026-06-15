@@ -102,12 +102,12 @@ export default function StatsScreen() {
                 yAxisLabel=""
                 yAxisSuffix=""
                 chartConfig={{
-                  backgroundColor: theme.colors.card,
-                  backgroundGradientFrom: theme.colors.card,
-                  backgroundGradientTo: theme.colors.card,
+                  backgroundColor: '#FFFFFF',
+                  backgroundGradientFrom: '#FFFFFF',
+                  backgroundGradientTo: '#FFFFFF',
                   decimalPlaces: 0,
-                  color: (opacity = 1) => `rgba(255, 107, 53, ${opacity})`,
-                  labelColor: () => theme.colors.textMuted,
+                  color: (opacity = 1) => `rgba(26, 26, 26, ${opacity})`,
+                  labelColor: () => theme.colors.textSecondary,
                   barPercentage: 0.6,
                 }}
                 style={{ borderRadius: theme.radius.md }}

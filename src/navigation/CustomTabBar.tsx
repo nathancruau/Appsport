@@ -33,7 +33,7 @@ export default function CustomTabBar({ state, navigation }: BottomTabBarProps) {
               <Ionicons
                 name={focused ? activeIcon : inactiveIcon}
                 size={26}
-                color={focused ? theme.colors.primary : theme.colors.textMuted}
+                color={focused ? theme.colors.text : theme.colors.textMuted}
               />
               {focused && <View style={styles.activeDot} />}
             </TouchableOpacity>
@@ -49,24 +49,19 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     paddingTop: 8,
     paddingHorizontal: 20,
-    borderTopWidth: 0,
   },
   pill: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(28, 28, 28, 0.95)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 32,
     paddingVertical: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 20,
-    ...Platform.select({
-      web: {
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
-      } as any,
-    }),
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   tab: {
     flex: 1,
@@ -79,6 +74,6 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: theme.colors.primary,
+    backgroundColor: theme.colors.text,
   },
 });

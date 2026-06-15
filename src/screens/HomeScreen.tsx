@@ -79,7 +79,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
         <View>

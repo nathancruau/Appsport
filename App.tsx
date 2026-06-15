@@ -14,10 +14,10 @@ if (typeof document !== 'undefined') {
     el.setAttribute('content', content);
   };
   addMeta('apple-mobile-web-app-capable', 'yes');
-  addMeta('apple-mobile-web-app-status-bar-style', 'black-translucent');
-  addMeta('theme-color', '#0F0F0F');
-  document.documentElement.style.background = '#0F0F0F';
-  if (document.body) document.body.style.background = '#0F0F0F';
+  addMeta('apple-mobile-web-app-status-bar-style', 'default');
+  addMeta('theme-color', '#F5F5F7');
+  document.documentElement.style.background = '#F5F5F7';
+  if (document.body) document.body.style.background = '#F5F5F7';
 
   // Auto-update: detect new version and reload
   const VERSION_URL = '/Appsport/version.json';
@@ -68,7 +68,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <AppNavigator />
     </SafeAreaProvider>
   );

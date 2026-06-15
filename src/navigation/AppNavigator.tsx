@@ -34,7 +34,7 @@ export default function AppNavigator() {
   return (
     <NavigationContainer
       theme={{
-        dark: true,
+        dark: false,
         colors: {
           primary: theme.colors.primary,
           background: theme.colors.background,
@@ -55,7 +55,7 @@ export default function AppNavigator() {
         <Stack.Screen
           name="WorkoutDetail"
           component={WorkoutDetailScreen}
-          options={{ headerShown: true, title: 'Séance', headerStyle: { backgroundColor: theme.colors.surface }, headerTintColor: theme.colors.text }}
+          options={{ headerShown: true, title: 'Séance', headerStyle: { backgroundColor: theme.colors.surface }, headerTintColor: theme.colors.text, headerShadowVisible: false }}
         />
         <Stack.Screen
           name="ExerciseDetail"
