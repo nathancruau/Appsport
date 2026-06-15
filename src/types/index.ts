@@ -51,10 +51,24 @@ export interface ActiveSet {
   completed: boolean;
 }
 
+export interface BestSet {
+  weight: number;
+  reps: number;
+  oneRM: number;
+}
+
 export interface ActiveExercise {
   exercise: Exercise;
   sets: ActiveSet[];
   previousSets: WorkoutSet[];
+  bestSet?: BestSet;
+}
+
+export interface WorkoutTemplate {
+  id: number;
+  name: string;
+  exerciseIds: number[];
+  createdAt: string;
 }
 
 export interface ActiveWorkout {
@@ -65,7 +79,7 @@ export interface ActiveWorkout {
 
 export type RootStackParamList = {
   Main: undefined;
-  ActiveWorkout: undefined;
+  ActiveWorkout: { templateExerciseIds?: number[] } | undefined;
   WorkoutDetail: { workoutId: number };
   ExerciseDetail: { exerciseId: number; exerciseName: string };
 };

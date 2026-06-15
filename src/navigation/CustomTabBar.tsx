@@ -18,7 +18,7 @@ export default function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 6) }]}>
+    <View style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom - 6, 2) }]}>
       <View style={styles.pill}>
         {state.routes.map((route, i) => {
           const focused = state.index === i;
@@ -47,7 +47,7 @@ export default function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 const styles = StyleSheet.create({
   wrapper: {
     backgroundColor: theme.colors.background,
-    paddingTop: 8,
+    paddingTop: 4,
     paddingHorizontal: 20,
   },
   pill: {

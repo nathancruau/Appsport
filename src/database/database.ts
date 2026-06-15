@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Exercise, Workout, WorkoutSet, PersonalRecord } from '../types';
+import { Exercise, Workout, WorkoutSet, PersonalRecord, WorkoutTemplate, BestSet } from '../types';
 import { estimateOneRM } from '../utils/calculations';
 
 // ─── ID generator ─────────────────────────────────────────────────────────────
@@ -11,6 +11,8 @@ function nextId(): number { return ++_nextId; }
 
 const KEY_EXERCISES = 'exercises';
 const KEY_WORKOUTS = 'workouts';
+const KEY_TEMPLATES = 'templates';
+const KEY_REST_TIMER = 'restTimerSettings';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -311,4 +313,85 @@ export async function getTotalStats(): Promise<{ totalWorkouts: number; totalVol
     }
   }
   return { totalWorkouts: workouts.length, totalVolume: Math.round(totalVolume), totalSets };
+}
+
+// ─── Exercise best set ─────────────────────────────────────────────────────────
+
+export async function getExerciseBest(exerciseId: number): Promise<BestSet | undefined> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  let best: BestSet | undefined;
+  for (const w of workouts) {
+    for (const ex of w.exercises) {
+      if (ex.exerciseId !== exerciseId) continue;
+      for (const s of ex.sets) {
+        if (s.completed && !s.isWarmup && s.reps != null && s.weight != null) {
+          const orm = estimateOneRM(s.weight, s.reps);
+          if (!best || orm > best.oneRM) {
+            best = { weight: s.weight, reps: s.reps, oneRM: orm };
+          }
+        }
+      }
+    }
+  }
+  return best;
+}
+
+// ─── Templates ────────────────────────────────────────────────────────────────
+
+export async function getTemplates(): Promise<WorkoutTemplate[]> {
+  return getJSON<WorkoutTemplate[]>(KEY_TEMPLATES, []);
+}
+
+export async function saveTemplate(name: string, exerciseIds: number[]): Promise<void> {
+  const templates = await getTemplates();
+  const template: WorkoutTemplate = {
+    id: nextId(),
+    name,
+    exerciseIds,
+    createdAt: new Date().toISOString(),
+  };
+  await setJSON(KEY_TEMPLATES, [...templates, template]);
+}
+
+export async function deleteTemplate(id: number): Promise<void> {
+  const templates = await getTemplates();
+  await setJSON(KEY_TEMPLATES, templates.filter((t) => t.id !== id));
+}
+
+// ─── Rest timer settings ───────────────────────────────────────────────────────
+
+export interface RestTimerSettings {
+  enabled: boolean;
+  durationSeconds: number;
+}
+
+export async function getRestTimerSettings(): Promise<RestTimerSettings> {
+  return getJSON<RestTimerSettings>(KEY_REST_TIMER, { enabled: true, durationSeconds: 90 });
+}
+
+export async function saveRestTimerSettings(settings: RestTimerSettings): Promise<void> {
+  await setJSON(KEY_REST_TIMER, settings);
+}
+
+// ─── Muscle heatmap ───────────────────────────────────────────────────────────
+
+export async function getWeekMuscleActivity(): Promise<Record<string, number>> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const result: Record<string, number> = {
+    chest: 0, back: 0, legs: 0, shoulders: 0, arms: 0, core: 0, cardio: 0, other: 0,
+  };
+  for (const w of workouts) {
+    const d = new Date(w.date);
+    if (d < cutoff) continue;
+    for (const ex of w.exercises) {
+      for (const s of ex.sets) {
+        if (s.completed && !s.isWarmup) {
+          const mg = ex.muscleGroup in result ? ex.muscleGroup : 'other';
+          result[mg] = (result[mg] ?? 0) + 1;
+        }
+      }
+    }
+  }
+  return result;
 }
