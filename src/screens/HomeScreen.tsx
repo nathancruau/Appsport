@@ -78,7 +78,7 @@ export default function HomeScreen({ navigation }: Props) {
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
+    <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
       <StatusBar barStyle="light-content" />
 
       <View style={styles.header}>
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
   },
   versionText: {
     fontSize: 11,

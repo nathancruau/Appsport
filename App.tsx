@@ -3,8 +3,9 @@ import { ActivityIndicator, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-// Fix iOS PWA status bar and safe areas for web
+// Web-specific setup: meta tags + auto-update
 if (typeof document !== 'undefined') {
+  // Fix iOS PWA status bar and safe areas
   const vp = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
   if (vp) vp.content = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1.00001, viewport-fit=cover';
   const addMeta = (name: string, content: string) => {
@@ -17,6 +18,32 @@ if (typeof document !== 'undefined') {
   addMeta('theme-color', '#0F0F0F');
   document.documentElement.style.background = '#0F0F0F';
   if (document.body) document.body.style.background = '#0F0F0F';
+
+  // Auto-update: detect new version and reload
+  const VERSION_URL = '/Appsport/version.json';
+  const checkUpdate = async () => {
+    try {
+      // If we just reloaded to pick up a new version, store it and clean the URL
+      if (window.location.search.includes('?v=')) {
+        const v = new URLSearchParams(window.location.search).get('v');
+        if (v) localStorage.setItem('_appVer', v);
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+      const r = await fetch(VERSION_URL + '?_=' + Date.now(), { cache: 'no-store' });
+      const { v } = await r.json() as { v: string };
+      const stored = localStorage.getItem('_appVer');
+      if (!stored) {
+        localStorage.setItem('_appVer', v);
+      } else if (stored !== v) {
+        // New version: redirect with query param to bypass PWA cache
+        window.location.replace(window.location.pathname + '?v=' + v);
+      }
+    } catch { /* offline or no version file yet */ }
+  };
+  checkUpdate();
+  // Re-check each time user returns to the app
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 }
 import { initDB } from './src/database/database';
 import AppNavigator from './src/navigation/AppNavigator';

@@ -30,6 +30,9 @@ jobs:
       - name: Export Expo web app
         run: npx expo export --platform web
 
+      - name: Write version file for auto-update
+        run: echo '{"v":"${{ github.sha }}"}' > dist/version.json
+
       - uses: actions/configure-pages@v4
 
       - uses: actions/upload-pages-artifact@v3
