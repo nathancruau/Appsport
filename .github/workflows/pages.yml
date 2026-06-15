@@ -25,7 +25,7 @@ jobs:
           node-version: '20'
           cache: npm
 
-      - run: npm ci
+      - run: npm install
 
       - name: Export Expo web app
         run: npx expo export --platform web
