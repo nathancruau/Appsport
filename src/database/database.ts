@@ -129,7 +129,7 @@ export async function saveWorkout(params: {
   name: string | null;
   date: string;
   duration: number;
-  exercises: { exerciseId: number; sets: { reps: number | null; weight: number | null; isWarmup: boolean; completed: boolean }[] }[];
+  exercises: { exerciseId: number; sets: { reps: number | null; weight: number | null; isWarmup: boolean; completed: boolean; rpe?: number | null }[] }[];
 }): Promise<number> {
   const allExercises = await getAllExercises();
   const exMap = new Map(allExercises.map((e) => [e.id, e]));
@@ -153,6 +153,7 @@ export async function saveWorkout(params: {
         duration: null,
         isWarmup: s.isWarmup,
         completed: s.completed,
+        rpe: s.rpe ?? null,
       })),
     };
   });
@@ -394,4 +395,29 @@ export async function getWeekMuscleActivity(): Promise<Record<string, number>> {
     }
   }
   return result;
+}
+
+// ─── CSV Export ───────────────────────────────────────────────────────────────
+
+export async function exportWorkoutsCSV(): Promise<string> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const lines: string[] = ['Date,Séance,Exercice,Série,Poids (kg),Reps,Chauffe,Complété,RPE'];
+  for (const w of workouts) {
+    for (const ex of w.exercises) {
+      for (const s of ex.sets) {
+        lines.push([
+          w.date,
+          `"${(w.name ?? '').replace(/"/g, '""')}"`,
+          `"${ex.exerciseName.replace(/"/g, '""')}"`,
+          s.setNumber,
+          s.weight ?? '',
+          s.reps ?? '',
+          s.isWarmup ? 'Oui' : 'Non',
+          s.completed ? 'Oui' : 'Non',
+          (s as any).rpe ?? '',
+        ].join(','));
+      }
+    }
+  }
+  return lines.join('\n');
 }

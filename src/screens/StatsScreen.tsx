@@ -1,12 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { BarChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
 import { PersonalRecord } from '../types';
-import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity } from '../database/database';
+import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity, exportWorkoutsCSV } from '../database/database';
 import { muscleGroupLabel, formatDate, formatWeight } from '../utils/calculations';
 
 const { width } = Dimensions.get('window');
@@ -44,6 +44,25 @@ export default function StatsScreen() {
 
   const hasData = totals.totalWorkouts > 0;
 
+  const handleExport = async () => {
+    try {
+      const csv = await exportWorkoutsCSV();
+      if (typeof document !== 'undefined') {
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `appsport-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        Alert.alert('Export', 'Disponible uniquement sur web pour le moment.');
+      }
+    } catch {
+      Alert.alert('Erreur', "Impossible d'exporter les données.");
+    }
+  };
+
   // Chart data — last 8 weeks
   const chartWeeks = weeklyVol.slice(-8);
   const chartData = chartWeeks.length >= 2 ? {
@@ -72,7 +91,12 @@ export default function StatsScreen() {
       contentContainerStyle={{ paddingBottom: 40 }}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.pageTitle}>Statistiques</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.pageTitle}>Statistiques</Text>
+        <TouchableOpacity onPress={handleExport} style={styles.exportBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name="download-outline" size={22} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
 
       {/* Muscle heatmap - always shown */}
       <View style={styles.section}>
@@ -184,7 +208,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     paddingHorizontal: theme.spacing.md,
   },
-  pageTitle: { fontSize: 26, fontWeight: '700', color: theme.colors.text, marginBottom: theme.spacing.md },
+  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.md },
+  pageTitle: { fontSize: 26, fontWeight: '700', color: theme.colors.text },
+  exportBtn: { padding: 4 },
   totalsRow: { flexDirection: 'row', gap: theme.spacing.sm, marginBottom: theme.spacing.md },
   totalCard: {
     flex: 1,

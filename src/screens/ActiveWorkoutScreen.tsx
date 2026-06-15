@@ -32,7 +32,10 @@ type Action =
   | { type: 'ADD_SET'; ei: number }
   | { type: 'REMOVE_SET'; ei: number; si: number }
   | { type: 'UPDATE_SET'; ei: number; si: number; field: 'reps' | 'weight'; value: string }
+  | { type: 'UPDATE_RPE'; ei: number; si: number; value: string }
   | { type: 'TOGGLE_COMPLETE'; ei: number; si: number }
+  | { type: 'MOVE_EXERCISE'; index: number; direction: 'up' | 'down' }
+  | { type: 'TOGGLE_SUPERSET'; index: number }
   | { type: 'TICK' }
   | { type: 'TOGGLE_PICKER' };
 
@@ -42,6 +45,7 @@ function makeEmptySet(prev?: WorkoutSet): ActiveSet {
     weight: prev?.weight != null ? String(prev.weight) : '',
     isWarmup: false,
     completed: false,
+    rpe: '',
   };
 }
 
@@ -83,6 +87,15 @@ function reducer(state: State, action: Action): State {
       exs[action.ei] = ex;
       return { ...state, exercises: exs };
     }
+    case 'UPDATE_RPE': {
+      const exs = [...state.exercises];
+      const ex = { ...exs[action.ei] };
+      const sets = [...ex.sets];
+      sets[action.si] = { ...sets[action.si], rpe: action.value };
+      ex.sets = sets;
+      exs[action.ei] = ex;
+      return { ...state, exercises: exs };
+    }
     case 'TOGGLE_COMPLETE': {
       const exs = [...state.exercises];
       const ex = { ...exs[action.ei] };
@@ -90,6 +103,24 @@ function reducer(state: State, action: Action): State {
       sets[action.si] = { ...sets[action.si], completed: !sets[action.si].completed };
       ex.sets = sets;
       exs[action.ei] = ex;
+      return { ...state, exercises: exs };
+    }
+    case 'MOVE_EXERCISE': {
+      const exs = [...state.exercises];
+      const i = action.index;
+      if (action.direction === 'up' && i > 0) {
+        [exs[i - 1], exs[i]] = [exs[i], exs[i - 1]];
+        // If moved exercise was superset, clear its superset flag and move the flag
+        if (exs[i].isSuperset) exs[i] = { ...exs[i], isSuperset: false };
+      } else if (action.direction === 'down' && i < exs.length - 1) {
+        [exs[i], exs[i + 1]] = [exs[i + 1], exs[i]];
+        if (exs[i].isSuperset) exs[i] = { ...exs[i], isSuperset: false };
+      }
+      return { ...state, exercises: exs };
+    }
+    case 'TOGGLE_SUPERSET': {
+      const exs = [...state.exercises];
+      exs[action.index] = { ...exs[action.index], isSuperset: !exs[action.index].isSuperset };
       return { ...state, exercises: exs };
     }
     case 'TICK': return { ...state, elapsedSeconds: state.elapsedSeconds + 1 };
@@ -199,7 +230,9 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
           showPR(ae.exercise.name);
         }
       }
-      if (restSettings.enabled) startRestTimer(restSettings.durationSeconds);
+      // Start rest timer only if the NEXT exercise is not a superset with this one
+      const nextIsSuperset = state.exercises[ei + 1]?.isSuperset;
+      if (restSettings.enabled && !nextIsSuperset) startRestTimer(restSettings.durationSeconds);
     }
   };
 
@@ -232,6 +265,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                   weight: s.weight ? Number(s.weight) : null,
                   isWarmup: s.isWarmup,
                   completed: s.completed,
+                  rpe: s.rpe ? Number(s.rpe) : null,
                 })),
               })),
             });
@@ -286,7 +320,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     <View style={styles.container}>
       {/* PR Banner */}
       {prBanner && (
-        <Animated.View style={[styles.prBanner, { opacity: prAnim, transform: [{ translateY: prAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }] }]}>
+        <Animated.View style={[styles.prBanner, { paddingTop: insets.top + 12, opacity: prAnim, transform: [{ translateY: prAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }] }]}>
           <Text style={styles.prBannerText}>🏆 Nouveau record — {prBanner} !</Text>
         </Animated.View>
       )}
@@ -325,15 +359,31 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
             </View>
           ) : (
             state.exercises.map((ae, ei) => (
-              <ExerciseBlock
-                key={`${ae.exercise.id}-${ei}`}
-                ae={ae} ei={ei}
-                onAddSet={() => { dispatch({ type: 'ADD_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                onRemoveSet={(si) => dispatch({ type: 'REMOVE_SET', ei, si })}
-                onUpdateSet={(si, field, value) => dispatch({ type: 'UPDATE_SET', ei, si, field, value })}
-                onToggleComplete={(si) => handleToggleComplete(ei, si)}
-                onRemoveExercise={() => dispatch({ type: 'REMOVE_EXERCISE', index: ei })}
-              />
+              <React.Fragment key={`${ae.exercise.id}-${ei}`}>
+                {ae.isSuperset && ei > 0 && (
+                  <View style={styles.supersetConnector}>
+                    <View style={styles.supersetLine} />
+                    <View style={styles.supersetBadge}>
+                      <Text style={styles.supersetBadgeText}>SUPERSET</Text>
+                    </View>
+                    <View style={styles.supersetLine} />
+                  </View>
+                )}
+                <ExerciseBlock
+                  ae={ae} ei={ei}
+                  isFirst={ei === 0}
+                  isLast={ei === state.exercises.length - 1}
+                  onAddSet={() => { dispatch({ type: 'ADD_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  onRemoveSet={(si) => dispatch({ type: 'REMOVE_SET', ei, si })}
+                  onUpdateSet={(si, field, value) => dispatch({ type: 'UPDATE_SET', ei, si, field, value })}
+                  onUpdateRPE={(si, value) => dispatch({ type: 'UPDATE_RPE', ei, si, value })}
+                  onToggleComplete={(si) => handleToggleComplete(ei, si)}
+                  onRemoveExercise={() => dispatch({ type: 'REMOVE_EXERCISE', index: ei })}
+                  onMoveUp={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'up' })}
+                  onMoveDown={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'down' })}
+                  onToggleSuperset={() => dispatch({ type: 'TOGGLE_SUPERSET', index: ei })}
+                />
+              </React.Fragment>
             ))
           )}
 
@@ -373,7 +423,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
       {/* Exercise Picker */}
       <Modal visible={state.showPicker} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
+        <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Choisir un exercice</Text>
             <TouchableOpacity onPress={() => dispatch({ type: 'TOGGLE_PICKER' })}>
@@ -423,7 +473,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
       {/* Rest Timer Settings */}
       <Modal visible={showTimerSettings} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
+        <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Chrono de repos</Text>
             <TouchableOpacity onPress={() => setShowTimerSettings(false)}>
@@ -464,7 +514,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
       {/* Save Template Modal */}
       <Modal visible={showSaveTemplate} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
+        <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowSaveTemplate(false)}>
               <Text style={styles.cancelText}>Annuler</Text>
@@ -497,29 +547,54 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 // ─── ExerciseBlock ────────────────────────────────────────────────────────────
 
 function ExerciseBlock({
-  ae, ei, onAddSet, onRemoveSet, onUpdateSet, onToggleComplete, onRemoveExercise,
+  ae, ei, isFirst, isLast,
+  onAddSet, onRemoveSet, onUpdateSet, onUpdateRPE, onToggleComplete,
+  onRemoveExercise, onMoveUp, onMoveDown, onToggleSuperset,
 }: {
   ae: ActiveExercise; ei: number;
+  isFirst: boolean; isLast: boolean;
   onAddSet: () => void;
   onRemoveSet: (si: number) => void;
   onUpdateSet: (si: number, field: 'reps' | 'weight', value: string) => void;
+  onUpdateRPE: (si: number, value: string) => void;
   onToggleComplete: (si: number) => void;
   onRemoveExercise: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onToggleSuperset: () => void;
 }) {
   const prevWorking = ae.previousSets.filter((s) => !s.isWarmup && s.completed);
+  const color = muscleColors[ae.exercise.muscleGroup] ?? '#888';
 
   return (
-    <View style={styles.exBlock}>
+    <View style={[styles.exBlock, ae.isSuperset && { borderLeftWidth: 3, borderLeftColor: color }]}>
       <View style={styles.exHeader}>
-        <View style={[styles.muscleTag, { backgroundColor: muscleColors[ae.exercise.muscleGroup] + '22' }]}>
-          <View style={[styles.dot, { backgroundColor: muscleColors[ae.exercise.muscleGroup] ?? '#888' }]} />
-          <Text style={[styles.muscleTagText, { color: muscleColors[ae.exercise.muscleGroup] ?? '#888' }]}>
+        <View style={[styles.muscleTag, { backgroundColor: color + '22' }]}>
+          <View style={[styles.dot, { backgroundColor: color }]} />
+          <Text style={[styles.muscleTagText, { color }]}>
             {muscleGroupLabel(ae.exercise.muscleGroup)}
           </Text>
         </View>
-        <TouchableOpacity onPress={onRemoveExercise} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="trash-outline" size={16} color={theme.colors.textMuted} />
-        </TouchableOpacity>
+        <View style={styles.exHeaderActions}>
+          {!isFirst && (
+            <TouchableOpacity
+              onPress={onToggleSuperset}
+              style={[styles.ssBtn, ae.isSuperset && styles.ssBtnActive]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Text style={[styles.ssBtnText, ae.isSuperset && styles.ssBtnTextActive]}>SS</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={onMoveUp} disabled={isFirst} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <Ionicons name="chevron-up" size={16} color={isFirst ? theme.colors.textMuted + '40' : theme.colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onMoveDown} disabled={isLast} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <Ionicons name="chevron-down" size={16} color={isLast ? theme.colors.textMuted + '40' : theme.colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onRemoveExercise} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <Ionicons name="trash-outline" size={16} color={theme.colors.textMuted} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Text style={styles.exName}>{ae.exercise.name}</Text>
@@ -541,31 +616,47 @@ function ExerciseBlock({
       {ae.sets.map((s, si) => {
         const prev = prevWorking[si];
         return (
-          <View key={si} style={[styles.setRow, s.completed && styles.setRowDone]}>
-            <Text style={[styles.setNum, s.completed && styles.setNumDone]}>{si + 1}</Text>
-            <Text style={styles.setPrev}>{prev ? `${prev.weight}×${prev.reps}` : '—'}</Text>
-            <TextInput
-              style={[styles.setInput, { width: 72 }]}
-              value={s.weight}
-              onChangeText={(v) => onUpdateSet(si, 'weight', v)}
-              keyboardType="decimal-pad"
-              placeholder="0"
-              placeholderTextColor={theme.colors.textMuted}
-              selectTextOnFocus
-            />
-            <TextInput
-              style={[styles.setInput, { width: 60 }]}
-              value={s.reps}
-              onChangeText={(v) => onUpdateSet(si, 'reps', v)}
-              keyboardType="number-pad"
-              placeholder="0"
-              placeholderTextColor={theme.colors.textMuted}
-              selectTextOnFocus
-            />
-            <TouchableOpacity onPress={() => onToggleComplete(si)} style={[styles.checkBtn, s.completed && styles.checkBtnDone]}>
-              <Ionicons name={s.completed ? 'checkmark' : 'ellipse-outline'} size={18} color={s.completed ? '#fff' : theme.colors.textMuted} />
-            </TouchableOpacity>
-          </View>
+          <React.Fragment key={si}>
+            <View style={[styles.setRow, s.completed && styles.setRowDone]}>
+              <Text style={[styles.setNum, s.completed && styles.setNumDone]}>{si + 1}</Text>
+              <Text style={styles.setPrev}>{prev ? `${prev.weight}×${prev.reps}` : '—'}</Text>
+              <TextInput
+                style={[styles.setInput, { width: 72 }]}
+                value={s.weight}
+                onChangeText={(v) => onUpdateSet(si, 'weight', v)}
+                keyboardType="decimal-pad"
+                placeholder="0"
+                placeholderTextColor={theme.colors.textMuted}
+                selectTextOnFocus
+              />
+              <TextInput
+                style={[styles.setInput, { width: 60 }]}
+                value={s.reps}
+                onChangeText={(v) => onUpdateSet(si, 'reps', v)}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={theme.colors.textMuted}
+                selectTextOnFocus
+              />
+              <TouchableOpacity onPress={() => onToggleComplete(si)} style={[styles.checkBtn, s.completed && styles.checkBtnDone]}>
+                <Ionicons name={s.completed ? 'checkmark' : 'ellipse-outline'} size={18} color={s.completed ? '#fff' : theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            {s.completed && (
+              <View style={styles.rpeRow}>
+                <Text style={styles.rpeLabel}>RPE</Text>
+                {['6', '7', '8', '9', '10'].map((val) => (
+                  <TouchableOpacity
+                    key={val}
+                    style={[styles.rpeChip, s.rpe === val && styles.rpeChipActive]}
+                    onPress={() => onUpdateRPE(si, s.rpe === val ? '' : val)}
+                  >
+                    <Text style={[styles.rpeChipText, s.rpe === val && styles.rpeChipTextActive]}>{val}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </React.Fragment>
         );
       })}
 
@@ -607,20 +698,44 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md, padding: 12, fontSize: 16, color: theme.colors.text,
   },
 
+  // Superset connector
+  supersetConnector: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: theme.spacing.md + 12, marginVertical: -4,
+  },
+  supersetLine: { flex: 1, height: 1.5, backgroundColor: theme.colors.border },
+  supersetBadge: {
+    backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.full,
+    paddingHorizontal: 10, paddingVertical: 3, marginHorizontal: 8,
+  },
+  supersetBadgeText: { fontSize: 10, fontWeight: '700', color: theme.colors.textSecondary, letterSpacing: 0.5 },
+
   // Exercise block
   exBlock: {
     backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
     marginHorizontal: theme.spacing.md, marginBottom: theme.spacing.sm, padding: theme.spacing.md,
   },
   exHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  exHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   muscleTag: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3 },
   muscleTagText: { fontSize: 11, fontWeight: '600' },
   dot: { width: 7, height: 7, borderRadius: 4 },
   exName: { fontSize: 17, fontWeight: '700', color: theme.colors.text, marginBottom: 4 },
   bestLabel: { fontSize: 12, color: theme.colors.textMuted, marginBottom: 10, fontStyle: 'italic' },
+
+  // SS badge
+  ssBtn: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+    borderWidth: 1, borderColor: theme.colors.border,
+  },
+  ssBtnActive: { backgroundColor: theme.colors.text, borderColor: theme.colors.text },
+  ssBtnText: { fontSize: 10, fontWeight: '800', color: theme.colors.textMuted, letterSpacing: 0.5 },
+  ssBtnTextActive: { color: '#fff' },
+
+  // Set rows
   setHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, paddingHorizontal: 2 },
   setCell: { fontSize: 11, color: theme.colors.textMuted, fontWeight: '600', textTransform: 'uppercase' },
-  setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 4, borderRadius: theme.radius.sm, padding: 4 },
+  setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 4, borderRadius: theme.radius.sm, padding: 4 },
   setRowDone: { backgroundColor: 'rgba(26,26,26,0.06)' },
   setNum: { width: 28, fontSize: 14, fontWeight: '600', color: theme.colors.textSecondary, textAlign: 'center' },
   setNumDone: { color: theme.colors.text },
@@ -631,6 +746,18 @@ const styles = StyleSheet.create({
   },
   checkBtn: { width: 36, height: 36, borderRadius: theme.radius.sm, backgroundColor: theme.colors.inputBackground, alignItems: 'center', justifyContent: 'center' },
   checkBtnDone: { backgroundColor: theme.colors.text },
+
+  // RPE row
+  rpeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingBottom: 6 },
+  rpeLabel: { fontSize: 10, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, width: 28 },
+  rpeChip: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: theme.radius.full,
+    borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground,
+  },
+  rpeChipActive: { backgroundColor: theme.colors.text, borderColor: theme.colors.text },
+  rpeChipText: { fontSize: 12, fontWeight: '600', color: theme.colors.textSecondary },
+  rpeChipTextActive: { color: '#fff' },
+
   addSetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8, paddingVertical: 10, borderRadius: theme.radius.sm, borderWidth: 1, borderColor: theme.colors.border, borderStyle: 'dashed' },
   addSetText: { color: theme.colors.textSecondary, fontSize: 14, fontWeight: '600' },
 
@@ -662,7 +789,7 @@ const styles = StyleSheet.create({
   emptyText: { color: theme.colors.textMuted, fontSize: 15 },
 
   // Modals
-  modal: { flex: 1, backgroundColor: theme.colors.background, paddingTop: 16 },
+  modal: { flex: 1, backgroundColor: theme.colors.background },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: theme.spacing.md, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   modalTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text },
   cancelText: { fontSize: 16, color: theme.colors.textSecondary },

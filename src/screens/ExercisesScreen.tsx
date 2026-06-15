@@ -109,7 +109,7 @@ export default function ExercisesScreen() {
 
       {/* Add exercise modal */}
       <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modal}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => { setShowAdd(false); setNewName(''); }}>
               <Text style={styles.cancelText}>Annuler</Text>

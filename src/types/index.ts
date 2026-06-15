@@ -31,6 +31,7 @@ export interface WorkoutSet {
   duration: number | null;
   isWarmup: boolean;
   completed: boolean;
+  rpe?: number | null;
 }
 
 export interface PersonalRecord {
@@ -49,6 +50,7 @@ export interface ActiveSet {
   weight: string;
   isWarmup: boolean;
   completed: boolean;
+  rpe: string;
 }
 
 export interface BestSet {
@@ -62,6 +64,7 @@ export interface ActiveExercise {
   sets: ActiveSet[];
   previousSets: WorkoutSet[];
   bestSet?: BestSet;
+  isSuperset?: boolean;
 }
 
 export interface WorkoutTemplate {
