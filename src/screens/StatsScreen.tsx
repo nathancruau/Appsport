@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { BarChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +12,7 @@ import { muscleGroupLabel, formatDate, formatWeight } from '../utils/calculation
 const { width } = Dimensions.get('window');
 
 export default function StatsScreen() {
+  const insets = useSafeAreaInsets();
   const [prs, setPrs] = useState<(PersonalRecord & { exerciseName: string; muscleGroup: string })[]>([]);
   const [weeklyVol, setWeeklyVol] = useState<{ week: string; volume: number; count: number }[]>([]);
   const [totals, setTotals] = useState({ totalWorkouts: 0, totalVolume: 0, totalSets: 0 });
@@ -59,7 +61,7 @@ export default function StatsScreen() {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { paddingTop: insets.top + 16 }]}
       contentContainerStyle={{ paddingBottom: 40 }}
       showsVerticalScrollIndicator={false}
     >
@@ -153,7 +155,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
-    paddingTop: 56,
     paddingHorizontal: theme.spacing.md,
   },
   pageTitle: { fontSize: 26, fontWeight: '700', color: theme.colors.text, marginBottom: theme.spacing.md },

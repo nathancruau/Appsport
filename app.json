@@ -24,7 +24,9 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "name": "ApSport"
+      "name": "ApSport",
+      "backgroundColor": "#0F0F0F",
+      "themeColor": "#0F0F0F"
     },
     "experiments": {
       "baseUrl": "/Appsport/"
