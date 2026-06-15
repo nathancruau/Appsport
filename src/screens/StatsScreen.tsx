@@ -104,11 +104,11 @@ export default function StatsScreen() {
       {/* Muscle heatmap - always shown */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Cette semaine</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
+        <View style={styles.muscleBubbleGrid}>
           {MUSCLE_GROUPS.map((mg) => {
             const sets = muscleActivity[mg] ?? 0;
             const opacity = sets === 0 ? 0.2 : Math.min(0.2 + (sets / Math.max(maxSets, 15)) * 0.8, 1);
-            const size = sets === 0 ? 44 : Math.min(44 + (sets / Math.max(maxSets, 15)) * 20, 64);
+            const size = sets === 0 ? 40 : Math.min(40 + (sets / Math.max(maxSets, 15)) * 16, 56);
             const color = muscleColors[mg] ?? '#888';
             return (
               <View key={mg} style={styles.muscleBubbleContainer}>
@@ -118,7 +118,7 @@ export default function StatsScreen() {
               </View>
             );
           })}
-        </ScrollView>
+        </View>
       </View>
 
       {!hasData ? (
@@ -293,8 +293,9 @@ const styles = StyleSheet.create({
   muscleBarTrack: { flex: 1, height: 8, backgroundColor: theme.colors.inputBackground, borderRadius: 4, overflow: 'hidden' },
   muscleBarFill: { height: '100%', borderRadius: 4 },
   muscleBarVol: { width: 36, fontSize: 11, color: theme.colors.textMuted, textAlign: 'right' },
-  // Muscle heatmap
-  muscleBubbleContainer: { alignItems: 'center', gap: 4, minWidth: 56 },
+  // Muscle heatmap (grille fixe 4×2)
+  muscleBubbleGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingVertical: 8, gap: 0 },
+  muscleBubbleContainer: { alignItems: 'center', gap: 4, width: '25%', paddingVertical: 8 },
   muscleBubble: { marginBottom: 2 },
   muscleBubbleLabel: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: '600', textAlign: 'center' },
   muscleBubbleCount: { fontSize: 11, color: theme.colors.textMuted, textAlign: 'center' },

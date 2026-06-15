@@ -152,7 +152,8 @@ function reducer(state: State, action: Action): State {
 
 // ─── Swipeable row ─────────────────────────────────────────────────────────
 
-function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
+// Native-only: PanResponder must NOT run on web — it intercepts all mouse events globally
+function SwipeableRowNative({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
   const tx = useRef(new Animated.Value(0)).current;
   const opened = useRef(false);
 
@@ -188,6 +189,13 @@ function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: 
   );
 }
 
+function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
+  if (Platform.OS === 'web') {
+    return <View style={styles.swipeContainer}>{children}</View>;
+  }
+  return <SwipeableRowNative onDelete={onDelete}>{children}</SwipeableRowNative>;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ActiveWorkoutScreen({ navigation, route }: any) {
@@ -200,9 +208,29 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
   // Rest timer
   const [restSettings, setRestSettings] = useState<RestTimerSettings>({ enabled: true, durationSeconds: 90 });
   const [restRemaining, setRestRemaining] = useState<number | null>(null);
+  const [isRestExpanded, setIsRestExpanded] = useState(false);
   const [showTimerSettings, setShowTimerSettings] = useState(false);
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const restExpandRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restTotal = useRef(90);
+
+  // Custom alert modal (Alert.alert is silently blocked in PWA standalone mode)
+  const [alertModal, setAlertModal] = useState<{
+    title: string; message: string;
+    buttons: { text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void }[];
+  } | null>(null);
+
+  const showAlert = (
+    title: string,
+    message: string,
+    buttons: { text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void }[] = [{ text: 'OK' }]
+  ) => {
+    if (Platform.OS !== 'web') {
+      Alert.alert(title, message, buttons.map((b) => ({ text: b.text, style: b.style, onPress: b.onPress })));
+    } else {
+      setAlertModal({ title, message, buttons });
+    }
+  };
 
   // PR tracking + banner
   const [prBanner, setPrBanner] = useState<string | null>(null);
@@ -238,13 +266,17 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (restRef.current) clearInterval(restRef.current);
+      if (restExpandRef.current) clearTimeout(restExpandRef.current);
     };
   }, []);
 
   const startRestTimer = useCallback((seconds: number) => {
     if (restRef.current) clearInterval(restRef.current);
+    if (restExpandRef.current) clearTimeout(restExpandRef.current);
     restTotal.current = seconds;
     setRestRemaining(seconds);
+    setIsRestExpanded(true);
+    restExpandRef.current = setTimeout(() => setIsRestExpanded(false), 5000);
     let remaining = seconds;
     restRef.current = setInterval(() => {
       remaining -= 1;
@@ -252,6 +284,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
         clearInterval(restRef.current!);
         restRef.current = null;
         setRestRemaining(null);
+        setIsRestExpanded(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
         if (remaining % 10 === 0) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -262,7 +295,9 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
   const skipRestTimer = () => {
     if (restRef.current) { clearInterval(restRef.current); restRef.current = null; }
+    if (restExpandRef.current) { clearTimeout(restExpandRef.current); restExpandRef.current = null; }
     setRestRemaining(null);
+    setIsRestExpanded(false);
   };
 
   const showPRBanner = (exerciseName: string) => {
@@ -300,12 +335,12 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
-  const finishWorkout = async () => {
-    if (state.exercises.length === 0) { Alert.alert('Séance vide', 'Ajoute au moins un exercice avant de terminer.'); return; }
+  const finishWorkout = () => {
+    if (state.exercises.length === 0) { showAlert('Séance vide', 'Ajoute au moins un exercice avant de terminer.'); return; }
     const completedSets = state.exercises.flatMap((e) => e.sets).filter((s) => s.completed && !s.isWarmup);
-    if (completedSets.length === 0) { Alert.alert('Aucune série complétée', 'Coche au moins une série avant de terminer.'); return; }
+    if (completedSets.length === 0) { showAlert('Aucune série complétée', 'Coche au moins une série avant de terminer.'); return; }
 
-    Alert.alert('Terminer la séance ?', `${state.exercises.length} exercice(s) · ${formatDuration(state.elapsedSeconds)}`, [
+    showAlert('Terminer la séance ?', `${state.exercises.length} exercice(s) · ${formatDuration(state.elapsedSeconds)}`, [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Terminer', style: 'default',
@@ -336,7 +371,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
               prs: [...new Set(prsAchievedRef.current)],
               exerciseCount: state.exercises.length,
             });
-          } catch { Alert.alert('Erreur', 'Impossible de sauvegarder la séance.'); }
+          } catch { showAlert('Erreur', 'Impossible de sauvegarder la séance.'); }
           finally { setSaving(false); }
         },
       },
@@ -345,7 +380,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
   const confirmDiscard = () => {
     if (state.exercises.length === 0) { navigation.goBack(); return; }
-    Alert.alert('Abandonner la séance ?', 'Tes données non sauvegardées seront perdues.', [
+    showAlert('Abandonner la séance ?', 'Tes données non sauvegardées seront perdues.', [
       { text: 'Continuer', style: 'cancel' },
       { text: 'Abandonner', style: 'destructive', onPress: () => navigation.goBack() },
     ]);
@@ -401,8 +436,9 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
         <View style={styles.timerBox}>
           <Ionicons name="time-outline" size={14} color={theme.colors.textSecondary} />
           <Text style={styles.timer}>{formatDuration(state.elapsedSeconds)}</Text>
-          <TouchableOpacity onPress={() => setShowTimerSettings(true)} style={{ marginLeft: 6 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="timer-outline" size={16} color={restSettings.enabled ? theme.colors.text : theme.colors.textMuted} />
+          <TouchableOpacity onPress={() => setShowTimerSettings(true)} style={styles.restChip} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="timer-outline" size={12} color={restSettings.enabled ? theme.colors.primary : theme.colors.textMuted} />
+            <Text style={styles.restChipText}>{restSettings.enabled ? `${restSettings.durationSeconds}s` : 'off'}</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity onPress={finishWorkout} style={[styles.headerBtn, styles.finishBtn]} disabled={saving} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
@@ -478,8 +514,28 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
         </ScrollView>
       </ContentWrapper>
 
-      {/* Rest Timer Overlay */}
-      {restRemaining !== null && (
+      {/* Rest Timer — grand (5 premières secondes) */}
+      {restRemaining !== null && isRestExpanded && (
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setIsRestExpanded(false)}
+          style={[styles.restExpandedOverlay, { paddingTop: insets.top + 80, paddingBottom: Math.max(insets.bottom, 32) }]}
+        >
+          <Text style={styles.restExpandedLabel}>Repos</Text>
+          <Text style={styles.restExpandedTime}>
+            {Math.floor(restRemaining / 60)}:{String(restRemaining % 60).padStart(2, '0')}
+          </Text>
+          <View style={styles.restProgressBarLg}>
+            <View style={[styles.restProgressFill, { width: `${(1 - restProgress) * 100}%` }]} />
+          </View>
+          <View style={styles.restSkip}>
+            <Text style={styles.restSkipText}>Passer →</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* Rest Timer — petit (après 5 s) */}
+      {restRemaining !== null && !isRestExpanded && (
         <View style={[styles.restOverlay, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <View style={styles.restCard}>
             <Text style={styles.restLabel}>Repos</Text>
@@ -617,6 +673,36 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
               <Text style={styles.templateExList}>
                 {state.exercises.map((ae) => ae.exercise.name).join(' · ')}
               </Text>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Custom Alert Modal (replaces Alert.alert on web/PWA) */}
+      {alertModal && (
+        <Modal visible={true} transparent animationType="fade">
+          <View style={styles.alertOverlay}>
+            <View style={styles.alertBox}>
+              <Text style={styles.alertTitle}>{alertModal.title}</Text>
+              {!!alertModal.message && <Text style={styles.alertMessage}>{alertModal.message}</Text>}
+              <View style={[styles.alertButtons, alertModal.buttons.length > 1 && { flexDirection: 'row' }]}>
+                {alertModal.buttons.map((btn, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={[
+                      styles.alertBtn,
+                      alertModal.buttons.length > 1 && { flex: 1 },
+                      btn.style === 'destructive' && styles.alertBtnDestructive,
+                      btn.style === 'cancel' && styles.alertBtnCancel,
+                    ]}
+                    onPress={() => { setAlertModal(null); btn.onPress?.(); }}
+                  >
+                    <Text style={[styles.alertBtnText, btn.style === 'destructive' && styles.alertBtnDestructiveText]}>
+                      {btn.text}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           </View>
         </Modal>
@@ -846,6 +932,8 @@ const styles = StyleSheet.create({
   headerBtn: { paddingHorizontal: 8, paddingVertical: 4, minWidth: 70 },
   timerBox: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   timer: { fontSize: 16, fontWeight: '600', color: theme.colors.text, fontVariant: ['tabular-nums'] },
+  restChip: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 6, backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3 },
+  restChipText: { fontSize: 11, fontWeight: '600', color: theme.colors.textSecondary },
   finishBtn: { backgroundColor: theme.colors.text, borderRadius: theme.radius.sm, alignItems: 'center' },
   finishText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
@@ -901,12 +989,12 @@ const styles = StyleSheet.create({
   setRowDone: { backgroundColor: 'rgba(26,26,26,0.06)' },
   setNum: { width: 28, fontSize: 14, fontWeight: '600', color: theme.colors.textSecondary, textAlign: 'center' },
   setNumDone: { color: theme.colors.text },
-  setPrev: { flex: 1, fontSize: 12, color: theme.colors.textMuted, textAlign: 'center' },
+  setPrev: { flex: 1, minWidth: 0, fontSize: 12, color: theme.colors.textMuted, textAlign: 'center' },
   setInput: {
     backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.sm,
     padding: 8, fontSize: 15, fontWeight: '600', color: theme.colors.text, textAlign: 'center',
   },
-  checkBtn: { width: 36, height: 36, borderRadius: theme.radius.sm, backgroundColor: theme.colors.inputBackground, alignItems: 'center', justifyContent: 'center' },
+  checkBtn: { width: 36, height: 36, flexShrink: 0, borderRadius: theme.radius.sm, backgroundColor: theme.colors.inputBackground, alignItems: 'center', justifyContent: 'center' },
   checkBtnDone: { backgroundColor: theme.colors.text },
 
   // RPE - 2 rows
@@ -935,6 +1023,15 @@ const styles = StyleSheet.create({
 
   saveTemplateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8 },
   saveTemplateText: { color: theme.colors.textSecondary, fontSize: 13 },
+
+  // Rest timer — grand
+  restExpandedOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.88)', justifyContent: 'center', alignItems: 'center', zIndex: 5,
+  },
+  restExpandedLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 },
+  restExpandedTime: { color: '#fff', fontSize: 80, fontWeight: '800', fontVariant: ['tabular-nums'], marginBottom: 16 },
+  restProgressBarLg: { width: 200, height: 4, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden', marginBottom: 32 },
 
   restOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16 },
   restCard: {
@@ -977,6 +1074,18 @@ const styles = StyleSheet.create({
   durationChipTextActive: { color: '#fff' },
   templateInput: { backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.md, padding: 12, fontSize: 16, color: theme.colors.text, marginBottom: 12 },
   templateExList: { fontSize: 13, color: theme.colors.textMuted, lineHeight: 20 },
+
+  // Custom alert modal
+  alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 32 },
+  alertBox: { backgroundColor: theme.colors.card, borderRadius: theme.radius.lg, padding: 20, width: '100%', maxWidth: 340 },
+  alertTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text, textAlign: 'center', marginBottom: 6 },
+  alertMessage: { fontSize: 14, color: theme.colors.textSecondary, textAlign: 'center', marginBottom: 16, lineHeight: 20 },
+  alertButtons: { gap: 8 },
+  alertBtn: { paddingVertical: 12, borderRadius: theme.radius.md, backgroundColor: theme.colors.inputBackground, alignItems: 'center' },
+  alertBtnCancel: { backgroundColor: theme.colors.inputBackground },
+  alertBtnDestructive: { backgroundColor: '#FFF0F0' },
+  alertBtnText: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
+  alertBtnDestructiveText: { color: theme.colors.error },
 
   // Summary modal
   summaryModal: {
