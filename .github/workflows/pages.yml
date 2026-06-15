@@ -33,6 +33,23 @@ jobs:
       - name: Write version file for auto-update
         run: echo '{"v":"${{ github.sha }}"}' > dist/version.json
 
+      - name: Create PWA icon
+        run: |
+          convert -size 180x180 xc:"#1A1A1A" \
+            -fill white -gravity center \
+            -font "DejaVu-Sans-Bold" -pointsize 96 \
+            -annotate 0 "A" -alpha off \
+            dist/icon.png 2>/dev/null || \
+          python3 -c "
+          import struct, zlib
+          def chunk(t,d): c=t+d; return struct.pack('>I',len(d))+c+struct.pack('>I',zlib.crc32(c)&0xffffffff)
+          w=h=180; r,g,b=26,26,26
+          raw=b''.join(b'\x00'+bytes([r,g,b]*w) for _ in range(h))
+          data=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(raw))+chunk(b'IEND',b'')
+          open('dist/icon.png','wb').write(data)
+          print('icon created (fallback)')
+          "
+
       - uses: actions/configure-pages@v4
 
       - uses: actions/upload-pages-artifact@v3

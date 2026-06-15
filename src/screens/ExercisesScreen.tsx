@@ -58,7 +58,7 @@ export default function ExercisesScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}>
       <View style={styles.headerRow}>
         <Text style={styles.pageTitle}>Exercices</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>

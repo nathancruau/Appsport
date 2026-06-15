@@ -18,6 +18,13 @@ if (typeof document !== 'undefined') {
   addMeta('theme-color', '#F5F5F7');
   document.documentElement.style.background = '#F5F5F7';
   if (document.body) document.body.style.background = '#F5F5F7';
+  // PWA icon for home screen bookmark
+  const addLink = (rel: string, href: string) => {
+    let el = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+    if (!el) { el = document.createElement('link'); el.rel = rel; document.head.appendChild(el); }
+    el.setAttribute('href', href);
+  };
+  addLink('apple-touch-icon', '/Appsport/icon.png');
 
   // Auto-update: detect new version and reload
   const VERSION_URL = '/Appsport/version.json';

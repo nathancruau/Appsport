@@ -60,7 +60,7 @@ export default function HistoryScreen() {
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}>
       <Text style={styles.pageTitle}>Historique</Text>
       {loading ? (
         <ActivityIndicator color={theme.colors.primary} style={{ marginTop: 40 }} />
