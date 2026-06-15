@@ -25,6 +25,9 @@
       "bundler": "metro",
       "output": "single",
       "name": "ApSport"
+    },
+    "experiments": {
+      "baseUrl": "/Appsport/"
     }
   }
 }
