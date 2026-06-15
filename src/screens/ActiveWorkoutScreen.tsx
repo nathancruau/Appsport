@@ -11,10 +11,12 @@ import { theme, muscleColors } from '../theme';
 import { Exercise, ActiveExercise, ActiveSet, WorkoutSet, BestSet } from '../types';
 import {
   getAllExercises, getLastWorkoutSets, saveWorkout,
-  getExerciseBest, getTemplates, saveTemplate,
+  getExerciseBest, saveTemplate,
   getRestTimerSettings, saveRestTimerSettings, RestTimerSettings,
 } from '../database/database';
 import { formatDuration, todayISO, muscleGroupLabel, estimateOneRM } from '../utils/calculations';
+
+const SUPERSET_COLOR = '#3B9EFF';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -110,7 +112,6 @@ function reducer(state: State, action: Action): State {
       const i = action.index;
       if (action.direction === 'up' && i > 0) {
         [exs[i - 1], exs[i]] = [exs[i], exs[i - 1]];
-        // If moved exercise was superset, clear its superset flag and move the flag
         if (exs[i].isSuperset) exs[i] = { ...exs[i], isSuperset: false };
       } else if (action.direction === 'down' && i < exs.length - 1) {
         [exs[i], exs[i + 1]] = [exs[i + 1], exs[i]];
@@ -207,9 +208,9 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     setPrBanner(exerciseName);
     prAnim.setValue(0);
     Animated.sequence([
-      Animated.timing(prAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(prAnim, { toValue: 1, duration: 300, useNativeDriver: false }),
       Animated.delay(2400),
-      Animated.timing(prAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      Animated.timing(prAnim, { toValue: 0, duration: 300, useNativeDriver: false }),
     ]).start(() => setPrBanner(null));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
@@ -226,11 +227,9 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
       const w = Number(set.weight), r = Number(set.reps);
       if (w > 0 && r > 0) {
         const newORM = estimateOneRM(w, r);
-        if (!ae.bestSet || newORM > ae.bestSet.oneRM) {
-          showPR(ae.exercise.name);
-        }
+        if (!ae.bestSet || newORM > ae.bestSet.oneRM) showPR(ae.exercise.name);
       }
-      // Start rest timer only if the NEXT exercise is not a superset with this one
+      // Don't start rest timer if the next exercise is a superset pair
       const nextIsSuperset = state.exercises[ei + 1]?.isSuperset;
       if (restSettings.enabled && !nextIsSuperset) startRestTimer(restSettings.durationSeconds);
     }
@@ -320,7 +319,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     <View style={styles.container}>
       {/* PR Banner */}
       {prBanner && (
-        <Animated.View style={[styles.prBanner, { paddingTop: insets.top + 12, opacity: prAnim, transform: [{ translateY: prAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }] }]}>
+        <Animated.View style={[styles.prBanner, { paddingTop: insets.top + 12, opacity: prAnim }]}>
           <Text style={styles.prBannerText}>🏆 Nouveau record — {prBanner} !</Text>
         </Animated.View>
       )}
@@ -358,33 +357,39 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
               <Text style={styles.emptyText}>Ajoute ton premier exercice</Text>
             </View>
           ) : (
-            state.exercises.map((ae, ei) => (
-              <React.Fragment key={`${ae.exercise.id}-${ei}`}>
-                {ae.isSuperset && ei > 0 && (
-                  <View style={styles.supersetConnector}>
-                    <View style={styles.supersetLine} />
-                    <View style={styles.supersetBadge}>
-                      <Text style={styles.supersetBadgeText}>SUPERSET</Text>
+            state.exercises.map((ae, ei) => {
+              const isTopOfSuperset = state.exercises[ei + 1]?.isSuperset === true;
+              const partnerName = ae.isSuperset && ei > 0 ? state.exercises[ei - 1].exercise.name : undefined;
+              return (
+                <React.Fragment key={`${ae.exercise.id}-${ei}`}>
+                  {ae.isSuperset && ei > 0 && (
+                    <View style={styles.supersetConnector}>
+                      <View style={styles.supersetLine} />
+                      <View style={styles.supersetBadge}>
+                        <Text style={styles.supersetBadgeText}>SUPERSET</Text>
+                      </View>
+                      <View style={styles.supersetLine} />
                     </View>
-                    <View style={styles.supersetLine} />
-                  </View>
-                )}
-                <ExerciseBlock
-                  ae={ae} ei={ei}
-                  isFirst={ei === 0}
-                  isLast={ei === state.exercises.length - 1}
-                  onAddSet={() => { dispatch({ type: 'ADD_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                  onRemoveSet={(si) => dispatch({ type: 'REMOVE_SET', ei, si })}
-                  onUpdateSet={(si, field, value) => dispatch({ type: 'UPDATE_SET', ei, si, field, value })}
-                  onUpdateRPE={(si, value) => dispatch({ type: 'UPDATE_RPE', ei, si, value })}
-                  onToggleComplete={(si) => handleToggleComplete(ei, si)}
-                  onRemoveExercise={() => dispatch({ type: 'REMOVE_EXERCISE', index: ei })}
-                  onMoveUp={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'up' })}
-                  onMoveDown={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'down' })}
-                  onToggleSuperset={() => dispatch({ type: 'TOGGLE_SUPERSET', index: ei })}
-                />
-              </React.Fragment>
-            ))
+                  )}
+                  <ExerciseBlock
+                    ae={ae} ei={ei}
+                    isFirst={ei === 0}
+                    isLast={ei === state.exercises.length - 1}
+                    isTopOfSuperset={isTopOfSuperset}
+                    supersetPartnerName={partnerName}
+                    onAddSet={() => { dispatch({ type: 'ADD_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                    onRemoveSet={(si) => dispatch({ type: 'REMOVE_SET', ei, si })}
+                    onUpdateSet={(si, field, value) => dispatch({ type: 'UPDATE_SET', ei, si, field, value })}
+                    onUpdateRPE={(si, value) => dispatch({ type: 'UPDATE_RPE', ei, si, value })}
+                    onToggleComplete={(si) => handleToggleComplete(ei, si)}
+                    onRemoveExercise={() => dispatch({ type: 'REMOVE_EXERCISE', index: ei })}
+                    onMoveUp={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'up' })}
+                    onMoveDown={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'down' })}
+                    onToggleSuperset={() => dispatch({ type: 'TOGGLE_SUPERSET', index: ei })}
+                  />
+                </React.Fragment>
+              );
+            })
           )}
 
           <TouchableOpacity style={styles.addExBtn} onPress={() => dispatch({ type: 'TOGGLE_PICKER' })}>
@@ -421,125 +426,131 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
         </View>
       )}
 
-      {/* Exercise Picker */}
-      <Modal visible={state.showPicker} animationType="slide" presentationStyle="pageSheet">
-        <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Choisir un exercice</Text>
-            <TouchableOpacity onPress={() => dispatch({ type: 'TOGGLE_PICKER' })}>
-              <Ionicons name="close" size={24} color={theme.colors.text} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={16} color={theme.colors.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Rechercher..."
-              placeholderTextColor={theme.colors.textMuted}
-              value={search}
-              onChangeText={setSearch}
-              autoFocus
-            />
-            {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <Ionicons name="close-circle" size={16} color={theme.colors.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-          <SectionList
-            sections={sections}
-            keyExtractor={(item) => String(item.id)}
-            renderSectionHeader={({ section }) => (
-              <View style={styles.sectionHeader}>
-                <View style={[styles.dot, { backgroundColor: muscleColors[section.title] ?? '#888' }]} />
-                <Text style={styles.sectionHeaderText}>{muscleGroupLabel(section.title)}</Text>
-              </View>
-            )}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.exerciseRow, addedIds.has(item.id) && styles.exerciseRowAdded]}
-                onPress={() => addExercise(item)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.exerciseName}>{item.name}</Text>
-                {addedIds.has(item.id) && <Ionicons name="checkmark" size={16} color={theme.colors.text} />}
-              </TouchableOpacity>
-            )}
-            contentContainerStyle={{ paddingBottom: 40 }}
-            stickySectionHeadersEnabled
-          />
-        </View>
-      </Modal>
-
-      {/* Rest Timer Settings */}
-      <Modal visible={showTimerSettings} animationType="slide" presentationStyle="pageSheet">
-        <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Chrono de repos</Text>
-            <TouchableOpacity onPress={() => setShowTimerSettings(false)}>
-              <Ionicons name="close" size={24} color={theme.colors.text} />
-            </TouchableOpacity>
-          </View>
-          <View style={{ padding: theme.spacing.md }}>
-            <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>Activer le chrono</Text>
-              <TouchableOpacity
-                onPress={() => updateRestSettings({ ...restSettings, enabled: !restSettings.enabled })}
-                style={[styles.toggle, restSettings.enabled && styles.toggleOn]}
-              >
-                <View style={[styles.toggleThumb, restSettings.enabled && styles.toggleThumbOn]} />
+      {/* Exercise Picker — conditionally mounted to avoid invisible touch blocker */}
+      {state.showPicker && (
+        <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Choisir un exercice</Text>
+              <TouchableOpacity onPress={() => dispatch({ type: 'TOGGLE_PICKER' })}>
+                <Ionicons name="close" size={24} color={theme.colors.text} />
               </TouchableOpacity>
             </View>
-            {restSettings.enabled && (
-              <View style={{ marginTop: theme.spacing.md }}>
-                <Text style={styles.settingSubLabel}>Durée du repos</Text>
-                <View style={styles.durationRow}>
-                  {[60, 90, 120].map((d) => (
-                    <TouchableOpacity
-                      key={d}
-                      style={[styles.durationChip, restSettings.durationSeconds === d && styles.durationChipActive]}
-                      onPress={() => updateRestSettings({ ...restSettings, durationSeconds: d })}
-                    >
-                      <Text style={[styles.durationChipText, restSettings.durationSeconds === d && styles.durationChipTextActive]}>
-                        {d === 60 ? '1 min' : d === 90 ? '1 min 30' : '2 min'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={16} color={theme.colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Rechercher..."
+                placeholderTextColor={theme.colors.textMuted}
+                value={search}
+                onChangeText={setSearch}
+                autoFocus
+              />
+              {search.length > 0 && (
+                <TouchableOpacity onPress={() => setSearch('')}>
+                  <Ionicons name="close-circle" size={16} color={theme.colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <SectionList
+              sections={sections}
+              keyExtractor={(item) => String(item.id)}
+              renderSectionHeader={({ section }) => (
+                <View style={styles.sectionHeader}>
+                  <View style={[styles.dot, { backgroundColor: muscleColors[section.title] ?? '#888' }]} />
+                  <Text style={styles.sectionHeaderText}>{muscleGroupLabel(section.title)}</Text>
                 </View>
-              </View>
-            )}
+              )}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.exerciseRow, addedIds.has(item.id) && styles.exerciseRowAdded]}
+                  onPress={() => addExercise(item)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.exerciseName}>{item.name}</Text>
+                  {addedIds.has(item.id) && <Ionicons name="checkmark" size={16} color={theme.colors.text} />}
+                </TouchableOpacity>
+              )}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              stickySectionHeadersEnabled
+            />
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
+
+      {/* Rest Timer Settings */}
+      {showTimerSettings && (
+        <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Chrono de repos</Text>
+              <TouchableOpacity onPress={() => setShowTimerSettings(false)}>
+                <Ionicons name="close" size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={{ padding: theme.spacing.md }}>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Activer le chrono</Text>
+                <TouchableOpacity
+                  onPress={() => updateRestSettings({ ...restSettings, enabled: !restSettings.enabled })}
+                  style={[styles.toggle, restSettings.enabled && styles.toggleOn]}
+                >
+                  <View style={[styles.toggleThumb, restSettings.enabled && styles.toggleThumbOn]} />
+                </TouchableOpacity>
+              </View>
+              {restSettings.enabled && (
+                <View style={{ marginTop: theme.spacing.md }}>
+                  <Text style={styles.settingSubLabel}>Durée du repos</Text>
+                  <View style={styles.durationRow}>
+                    {[60, 90, 120].map((d) => (
+                      <TouchableOpacity
+                        key={d}
+                        style={[styles.durationChip, restSettings.durationSeconds === d && styles.durationChipActive]}
+                        onPress={() => updateRestSettings({ ...restSettings, durationSeconds: d })}
+                      >
+                        <Text style={[styles.durationChipText, restSettings.durationSeconds === d && styles.durationChipTextActive]}>
+                          {d === 60 ? '1 min' : d === 90 ? '1 min 30' : '2 min'}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* Save Template Modal */}
-      <Modal visible={showSaveTemplate} animationType="slide" presentationStyle="pageSheet">
-        <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowSaveTemplate(false)}>
-              <Text style={styles.cancelText}>Annuler</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Nouveau template</Text>
-            <TouchableOpacity onPress={handleSaveTemplate}>
-              <Text style={[styles.cancelText, { color: theme.colors.text, fontWeight: '700' }]}>Sauvegarder</Text>
-            </TouchableOpacity>
+      {showSaveTemplate && (
+        <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowSaveTemplate(false)}>
+                <Text style={styles.cancelText}>Annuler</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Nouveau template</Text>
+              <TouchableOpacity onPress={handleSaveTemplate}>
+                <Text style={[styles.cancelText, { color: theme.colors.text, fontWeight: '700' }]}>Sauvegarder</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ padding: theme.spacing.md }}>
+              <Text style={styles.settingSubLabel}>Nom du template</Text>
+              <TextInput
+                style={styles.templateInput}
+                placeholder="Ex : Push A, Jambes, Full body…"
+                placeholderTextColor={theme.colors.textMuted}
+                value={templateName}
+                onChangeText={setTemplateName}
+                autoFocus
+              />
+              <Text style={styles.templateExList}>
+                {state.exercises.map((ae) => ae.exercise.name).join(' · ')}
+              </Text>
+            </View>
           </View>
-          <View style={{ padding: theme.spacing.md }}>
-            <Text style={styles.settingSubLabel}>Nom du template</Text>
-            <TextInput
-              style={styles.templateInput}
-              placeholder="Ex : Push A, Jambes, Full body…"
-              placeholderTextColor={theme.colors.textMuted}
-              value={templateName}
-              onChangeText={setTemplateName}
-              autoFocus
-            />
-            <Text style={styles.templateExList}>
-              {state.exercises.map((ae) => ae.exercise.name).join(' · ')}
-            </Text>
-          </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -547,12 +558,14 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 // ─── ExerciseBlock ────────────────────────────────────────────────────────────
 
 function ExerciseBlock({
-  ae, ei, isFirst, isLast,
+  ae, ei, isFirst, isLast, isTopOfSuperset, supersetPartnerName,
   onAddSet, onRemoveSet, onUpdateSet, onUpdateRPE, onToggleComplete,
   onRemoveExercise, onMoveUp, onMoveDown, onToggleSuperset,
 }: {
   ae: ActiveExercise; ei: number;
   isFirst: boolean; isLast: boolean;
+  isTopOfSuperset: boolean;
+  supersetPartnerName?: string;
   onAddSet: () => void;
   onRemoveSet: (si: number) => void;
   onUpdateSet: (si: number, field: 'reps' | 'weight', value: string) => void;
@@ -564,14 +577,15 @@ function ExerciseBlock({
   onToggleSuperset: () => void;
 }) {
   const prevWorking = ae.previousSets.filter((s) => !s.isWarmup && s.completed);
-  const color = muscleColors[ae.exercise.muscleGroup] ?? '#888';
+  const muscleColor = muscleColors[ae.exercise.muscleGroup] ?? '#888';
+  const inSuperset = ae.isSuperset || isTopOfSuperset;
 
   return (
-    <View style={[styles.exBlock, ae.isSuperset && { borderLeftWidth: 3, borderLeftColor: color }]}>
+    <View style={[styles.exBlock, inSuperset && styles.exBlockSuperset]}>
       <View style={styles.exHeader}>
-        <View style={[styles.muscleTag, { backgroundColor: color + '22' }]}>
-          <View style={[styles.dot, { backgroundColor: color }]} />
-          <Text style={[styles.muscleTagText, { color }]}>
+        <View style={[styles.muscleTag, { backgroundColor: muscleColor + '22' }]}>
+          <View style={[styles.dot, { backgroundColor: muscleColor }]} />
+          <Text style={[styles.muscleTagText, { color: muscleColor }]}>
             {muscleGroupLabel(ae.exercise.muscleGroup)}
           </Text>
         </View>
@@ -580,24 +594,38 @@ function ExerciseBlock({
             <TouchableOpacity
               onPress={onToggleSuperset}
               style={[styles.ssBtn, ae.isSuperset && styles.ssBtnActive]}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Text style={[styles.ssBtnText, ae.isSuperset && styles.ssBtnTextActive]}>SS</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={onMoveUp} disabled={isFirst} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <TouchableOpacity onPress={onMoveUp} disabled={isFirst} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="chevron-up" size={16} color={isFirst ? theme.colors.textMuted + '40' : theme.colors.textMuted} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={onMoveDown} disabled={isLast} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <TouchableOpacity onPress={onMoveDown} disabled={isLast} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="chevron-down" size={16} color={isLast ? theme.colors.textMuted + '40' : theme.colors.textMuted} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={onRemoveExercise} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <TouchableOpacity onPress={onRemoveExercise} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="trash-outline" size={16} color={theme.colors.textMuted} />
           </TouchableOpacity>
         </View>
       </View>
 
       <Text style={styles.exName}>{ae.exercise.name}</Text>
+
+      {/* Superset partner label */}
+      {supersetPartnerName && (
+        <View style={styles.supersetPartnerRow}>
+          <Ionicons name="swap-vertical" size={12} color={SUPERSET_COLOR} />
+          <Text style={styles.supersetPartnerText}>Superset avec {supersetPartnerName}</Text>
+        </View>
+      )}
+      {isTopOfSuperset && (
+        <View style={styles.supersetPartnerRow}>
+          <Ionicons name="swap-vertical" size={12} color={SUPERSET_COLOR} />
+          <Text style={styles.supersetPartnerText}>Enchaîner sans repos</Text>
+        </View>
+      )}
 
       {ae.bestSet && (
         <Text style={styles.bestLabel}>
@@ -643,9 +671,9 @@ function ExerciseBlock({
               </TouchableOpacity>
             </View>
             {s.completed && (
-              <View style={styles.rpeRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rpeScrollRow} contentContainerStyle={styles.rpeScrollContent}>
                 <Text style={styles.rpeLabel}>RPE</Text>
-                {['6', '7', '8', '9', '10'].map((val) => (
+                {['1','2','3','4','5','6','7','8','9','10'].map((val) => (
                   <TouchableOpacity
                     key={val}
                     style={[styles.rpeChip, s.rpe === val && styles.rpeChipActive]}
@@ -654,7 +682,7 @@ function ExerciseBlock({
                     <Text style={[styles.rpeChipText, s.rpe === val && styles.rpeChipTextActive]}>{val}</Text>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </ScrollView>
             )}
           </React.Fragment>
         );
@@ -686,6 +714,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.md,
     backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+    zIndex: 10,
   },
   headerBtn: { paddingHorizontal: 8, paddingVertical: 4, minWidth: 70 },
   timerBox: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -698,44 +727,54 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md, padding: 12, fontSize: 16, color: theme.colors.text,
   },
 
-  // Superset connector
+  // Superset connector between blocks
   supersetConnector: {
     flexDirection: 'row', alignItems: 'center',
-    marginHorizontal: theme.spacing.md + 12, marginVertical: -4,
+    marginHorizontal: theme.spacing.md + 12, marginVertical: -2,
+    zIndex: 1,
   },
-  supersetLine: { flex: 1, height: 1.5, backgroundColor: theme.colors.border },
+  supersetLine: { flex: 1, height: 2, backgroundColor: SUPERSET_COLOR, opacity: 0.4 },
   supersetBadge: {
-    backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.full,
+    backgroundColor: SUPERSET_COLOR + '18', borderRadius: theme.radius.full,
     paddingHorizontal: 10, paddingVertical: 3, marginHorizontal: 8,
+    borderWidth: 1, borderColor: SUPERSET_COLOR + '44',
   },
-  supersetBadgeText: { fontSize: 10, fontWeight: '700', color: theme.colors.textSecondary, letterSpacing: 0.5 },
+  supersetBadgeText: { fontSize: 10, fontWeight: '800', color: SUPERSET_COLOR, letterSpacing: 0.8 },
 
   // Exercise block
   exBlock: {
     backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
     marginHorizontal: theme.spacing.md, marginBottom: theme.spacing.sm, padding: theme.spacing.md,
   },
+  exBlockSuperset: {
+    borderLeftWidth: 3, borderLeftColor: SUPERSET_COLOR,
+  },
   exHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   exHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   muscleTag: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3 },
   muscleTagText: { fontSize: 11, fontWeight: '600' },
   dot: { width: 7, height: 7, borderRadius: 4 },
-  exName: { fontSize: 17, fontWeight: '700', color: theme.colors.text, marginBottom: 4 },
+  exName: { fontSize: 17, fontWeight: '700', color: theme.colors.text, marginBottom: 2 },
+
+  // Superset partner label
+  supersetPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
+  supersetPartnerText: { fontSize: 12, color: SUPERSET_COLOR, fontWeight: '600' },
+
   bestLabel: { fontSize: 12, color: theme.colors.textMuted, marginBottom: 10, fontStyle: 'italic' },
 
   // SS badge
   ssBtn: {
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-    borderWidth: 1, borderColor: theme.colors.border,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5,
+    borderWidth: 1.5, borderColor: theme.colors.border,
   },
-  ssBtnActive: { backgroundColor: theme.colors.text, borderColor: theme.colors.text },
+  ssBtnActive: { backgroundColor: SUPERSET_COLOR, borderColor: SUPERSET_COLOR },
   ssBtnText: { fontSize: 10, fontWeight: '800', color: theme.colors.textMuted, letterSpacing: 0.5 },
   ssBtnTextActive: { color: '#fff' },
 
   // Set rows
   setHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, paddingHorizontal: 2 },
   setCell: { fontSize: 11, color: theme.colors.textMuted, fontWeight: '600', textTransform: 'uppercase' },
-  setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 4, borderRadius: theme.radius.sm, padding: 4 },
+  setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2, gap: 4, borderRadius: theme.radius.sm, padding: 4 },
   setRowDone: { backgroundColor: 'rgba(26,26,26,0.06)' },
   setNum: { width: 28, fontSize: 14, fontWeight: '600', color: theme.colors.textSecondary, textAlign: 'center' },
   setNumDone: { color: theme.colors.text },
@@ -748,10 +787,11 @@ const styles = StyleSheet.create({
   checkBtnDone: { backgroundColor: theme.colors.text },
 
   // RPE row
-  rpeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingBottom: 6 },
-  rpeLabel: { fontSize: 10, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, width: 28 },
+  rpeScrollRow: { marginBottom: 4 },
+  rpeScrollContent: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingVertical: 4 },
+  rpeLabel: { fontSize: 10, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 2 },
   rpeChip: {
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: theme.radius.full,
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: theme.radius.full,
     borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground,
   },
   rpeChipActive: { backgroundColor: theme.colors.text, borderColor: theme.colors.text },
