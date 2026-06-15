@@ -26,30 +26,28 @@ if (typeof document !== 'undefined') {
   };
   addLink('apple-touch-icon', '/Appsport/icon.png');
 
-  // Auto-update: detect new version and reload
+  // Auto-update: detect new version via version.json, then unregister SW and reload
   const VERSION_URL = '/Appsport/version.json';
   const checkUpdate = async () => {
     try {
-      // If we just reloaded to pick up a new version, store it and clean the URL
-      if (window.location.search.includes('?v=')) {
-        const v = new URLSearchParams(window.location.search).get('v');
-        if (v) localStorage.setItem('_appVer', v);
-        window.history.replaceState({}, '', window.location.pathname);
-        return;
-      }
       const r = await fetch(VERSION_URL + '?_=' + Date.now(), { cache: 'no-store' });
       const { v } = await r.json() as { v: string };
       const stored = localStorage.getItem('_appVer');
       if (!stored) {
         localStorage.setItem('_appVer', v);
       } else if (stored !== v) {
-        // New version: redirect with query param to bypass PWA cache
-        window.location.replace(window.location.pathname + '?v=' + v);
+        // Unregister all service workers so the reload fetches fresh files from network
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((reg) => reg.unregister()));
+        }
+        localStorage.setItem('_appVer', v);
+        window.location.reload();
       }
-    } catch { /* offline or no version file yet */ }
+    } catch { /* offline or version file not yet deployed */ }
   };
   checkUpdate();
-  // Re-check each time user returns to the app
+  // Re-check each time user returns to the tab/app
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 }
 import { initDB } from './src/database/database';
