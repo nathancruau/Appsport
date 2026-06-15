@@ -514,28 +514,8 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
         </ScrollView>
       </ContentWrapper>
 
-      {/* Rest Timer — grand (5 premières secondes) */}
+      {/* Rest Timer — carte normale (5 premières secondes) */}
       {restRemaining !== null && isRestExpanded && (
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={() => setIsRestExpanded(false)}
-          style={[styles.restExpandedOverlay, { paddingTop: insets.top + 80, paddingBottom: Math.max(insets.bottom, 32) }]}
-        >
-          <Text style={styles.restExpandedLabel}>Repos</Text>
-          <Text style={styles.restExpandedTime}>
-            {Math.floor(restRemaining / 60)}:{String(restRemaining % 60).padStart(2, '0')}
-          </Text>
-          <View style={styles.restProgressBarLg}>
-            <View style={[styles.restProgressFill, { width: `${(1 - restProgress) * 100}%` }]} />
-          </View>
-          <View style={styles.restSkip}>
-            <Text style={styles.restSkipText}>Passer →</Text>
-          </View>
-        </TouchableOpacity>
-      )}
-
-      {/* Rest Timer — petit (après 5 s) */}
-      {restRemaining !== null && !isRestExpanded && (
         <View style={[styles.restOverlay, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <View style={styles.restCard}>
             <Text style={styles.restLabel}>Repos</Text>
@@ -549,6 +529,21 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
               <Text style={styles.restSkipText}>Passer</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {/* Rest Timer — version mini (après 5 s) */}
+      {restRemaining !== null && !isRestExpanded && (
+        <View style={[styles.restMiniPill, { bottom: Math.max(insets.bottom + 8, 24) }]}>
+          <TouchableOpacity onPress={() => setIsRestExpanded(true)} style={styles.restMiniMain}>
+            <Ionicons name="timer-outline" size={13} color="#fff" />
+            <Text style={styles.restMiniText}>
+              {Math.floor(restRemaining / 60)}:{String(restRemaining % 60).padStart(2, '0')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={skipRestTimer} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="close" size={13} color="rgba(255,255,255,0.5)" />
+          </TouchableOpacity>
         </View>
       )}
 
@@ -1024,14 +1019,15 @@ const styles = StyleSheet.create({
   saveTemplateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8 },
   saveTemplateText: { color: theme.colors.textSecondary, fontSize: 13 },
 
-  // Rest timer — grand
-  restExpandedOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.88)', justifyContent: 'center', alignItems: 'center', zIndex: 5,
+  // Rest timer — mini pill (après 5s)
+  restMiniPill: {
+    position: 'absolute', right: 16, zIndex: 10,
+    backgroundColor: '#1A1A1A', borderRadius: theme.radius.full,
+    paddingLeft: 10, paddingRight: 8, paddingVertical: 7,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
   },
-  restExpandedLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 },
-  restExpandedTime: { color: '#fff', fontSize: 80, fontWeight: '800', fontVariant: ['tabular-nums'], marginBottom: 16 },
-  restProgressBarLg: { width: 200, height: 4, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden', marginBottom: 32 },
+  restMiniMain: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 8 },
+  restMiniText: { color: '#fff', fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
 
   restOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16 },
   restCard: {

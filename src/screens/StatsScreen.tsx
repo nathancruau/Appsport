@@ -1,11 +1,12 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LineChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
-import { PersonalRecord } from '../types';
+import { PersonalRecord, RootStackParamList } from '../types';
 import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity, exportWorkoutsCSV, getFourWeekMuscleVolume } from '../database/database';
 import { muscleGroupLabel, formatDate, formatWeight } from '../utils/calculations';
 
@@ -13,6 +14,7 @@ const { width } = Dimensions.get('window');
 
 export default function StatsScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [prs, setPrs] = useState<(PersonalRecord & { exerciseName: string; muscleGroup: string })[]>([]);
   const [weeklyVol, setWeeklyVol] = useState<{ week: string; volume: number; count: number }[]>([]);
   const [totals, setTotals] = useState({ totalWorkouts: 0, totalVolume: 0, totalSets: 0 });
@@ -204,8 +206,16 @@ export default function StatsScreen() {
                     <Text style={styles.prGroupTitle}>{muscleGroupLabel(muscle)}</Text>
                   </View>
                   {records.map((pr) => (
-                    <View key={pr.id} style={styles.prRow}>
-                      <Text style={styles.prName}>{pr.exerciseName}</Text>
+                    <TouchableOpacity
+                      key={pr.id}
+                      style={styles.prRow}
+                      onPress={() => navigation.navigate('ExerciseDetail', { exerciseId: pr.exerciseId, exerciseName: pr.exerciseName })}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.prNameRow}>
+                        <Text style={styles.prName}>{pr.exerciseName}</Text>
+                        <Ionicons name="chevron-forward" size={13} color={theme.colors.textMuted} />
+                      </View>
                       <View style={styles.prRight}>
                         {pr.weight && pr.reps && (
                           <Text style={styles.prDetail}>{formatWeight(pr.weight)} kg × {pr.reps}</Text>
@@ -214,7 +224,7 @@ export default function StatsScreen() {
                           <Text style={styles.prOneRM}>1RM ≈ {pr.oneRM} kg</Text>
                         )}
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                 </View>
               ))}
@@ -279,7 +289,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
-  prName: { flex: 1, fontSize: 14, color: theme.colors.text },
+  prNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
+  prName: { fontSize: 14, color: theme.colors.text, flex: 1 },
   prRight: { alignItems: 'flex-end', gap: 2 },
   prDetail: { fontSize: 13, color: theme.colors.textSecondary },
   prOneRM: { fontSize: 13, fontWeight: '700', color: theme.colors.primary },

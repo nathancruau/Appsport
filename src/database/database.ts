@@ -359,6 +359,11 @@ export async function deleteTemplate(id: number): Promise<void> {
   await setJSON(KEY_TEMPLATES, templates.filter((t) => t.id !== id));
 }
 
+export async function deleteWorkout(workoutId: number): Promise<void> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  await setJSON(KEY_WORKOUTS, workouts.filter((w) => w.id !== workoutId));
+}
+
 // ─── Rest timer settings ───────────────────────────────────────────────────────
 
 export interface RestTimerSettings {
