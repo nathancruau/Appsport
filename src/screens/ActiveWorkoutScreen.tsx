@@ -4,6 +4,7 @@ import {
   TextInput, Modal, ScrollView, Alert, KeyboardAvoidingView,
   Platform, SectionList,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { theme, muscleColors } from '../theme';
@@ -102,6 +103,7 @@ function reducer(state: State, action: Action): State {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ActiveWorkoutScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const [state, dispatch] = useReducer(reducer, {
     name: '',
     exercises: [],
@@ -198,7 +200,7 @@ export default function ActiveWorkoutScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity onPress={confirmDiscard} style={styles.headerBtn}>
           <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
         </TouchableOpacity>
@@ -412,7 +414,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.md,
-    paddingTop: 56,
     paddingBottom: theme.spacing.md,
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,

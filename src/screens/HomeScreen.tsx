@@ -4,6 +4,7 @@ import {
   StatusBar, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { version } from '../../package.json';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -89,6 +90,7 @@ export default function HomeScreen({ navigation }: Props) {
               : 'Prêt pour une séance ?'}
           </Text>
         </View>
+        <Text style={styles.versionText}>v{version}</Text>
       </View>
 
       <TouchableOpacity
@@ -131,7 +133,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: theme.spacing.lg,
+  },
+  versionText: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: 4,
   },
   greeting: {
     fontSize: 26,
