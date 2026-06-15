@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [claude/funny-hypatia-r9bccd]
+    branches: [main, claude/funny-hypatia-r9bccd]
   workflow_dispatch:
 
 permissions:
