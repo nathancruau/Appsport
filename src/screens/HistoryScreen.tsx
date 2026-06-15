@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,6 +16,7 @@ export default function HistoryScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -26,6 +27,8 @@ export default function HistoryScreen() {
       return () => { active = false; };
     }, [])
   );
+
+  const filtered = workouts.filter(w => !search || (w.name ?? 'Séance').toLowerCase().includes(search.toLowerCase()) || w.date.includes(search));
 
   // Group by month
   const grouped = workouts.reduce<{ title: string; data: WorkoutItem[] }[]>((acc, w) => {
@@ -62,6 +65,21 @@ export default function HistoryScreen() {
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}>
       <Text style={styles.pageTitle}>Historique</Text>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={16} color={theme.colors.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Rechercher..."
+          placeholderTextColor={theme.colors.textMuted}
+          value={search}
+          onChangeText={setSearch}
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')}>
+            <Ionicons name="close-circle" size={16} color={theme.colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
       {loading ? (
         <ActivityIndicator color={theme.colors.primary} style={{ marginTop: 40 }} />
       ) : workouts.length === 0 ? (
@@ -72,11 +90,11 @@ export default function HistoryScreen() {
         </View>
       ) : (
         <FlatList
-          data={workouts}
+          data={filtered}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
           ListHeaderComponent={
-            <Text style={styles.count}>{workouts.length} séance{workouts.length !== 1 ? 's' : ''}</Text>
+            <Text style={styles.count}>{filtered.length} séance{filtered.length !== 1 ? 's' : ''}</Text>
           }
           contentContainerStyle={{ paddingBottom: 24 }}
           showsVerticalScrollIndicator={false}
@@ -98,6 +116,17 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     marginBottom: theme.spacing.md,
   },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: theme.spacing.sm,
+    backgroundColor: theme.colors.inputBackground,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: theme.colors.text },
   count: {
     fontSize: 13,
     color: theme.colors.textMuted,

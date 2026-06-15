@@ -2,11 +2,11 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { BarChart } from 'react-native-chart-kit';
+import { LineChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
 import { PersonalRecord } from '../types';
-import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity, exportWorkoutsCSV } from '../database/database';
+import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity, exportWorkoutsCSV, getFourWeekMuscleVolume } from '../database/database';
 import { muscleGroupLabel, formatDate, formatWeight } from '../utils/calculations';
 
 const { width } = Dimensions.get('window');
@@ -17,6 +17,7 @@ export default function StatsScreen() {
   const [weeklyVol, setWeeklyVol] = useState<{ week: string; volume: number; count: number }[]>([]);
   const [totals, setTotals] = useState({ totalWorkouts: 0, totalVolume: 0, totalSets: 0 });
   const [muscleActivity, setMuscleActivity] = useState<Record<string, number>>({});
+  const [muscleVolume, setMuscleVolume] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -27,12 +28,14 @@ export default function StatsScreen() {
         getWeeklyVolume(),
         getTotalStats(),
         getWeekMuscleActivity(),
-      ]).then(([p, w, t, m]) => {
+        getFourWeekMuscleVolume(),
+      ]).then(([p, w, t, m, mv]) => {
         if (active) {
           setPrs(p);
           setWeeklyVol(w);
           setTotals(t);
           setMuscleActivity(m);
+          setMuscleVolume(mv);
           setLoading(false);
         }
       });
@@ -142,16 +145,37 @@ export default function StatsScreen() {
             </View>
           </View>
 
+          {/* Muscle volume 4 weeks */}
+          {Object.values(muscleVolume).some(v => v > 0) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Volume par muscle — 4 semaines</Text>
+              {Object.entries(muscleVolume).filter(([,v]) => v > 0).sort(([,a],[,b]) => b-a).map(([mg, vol]) => {
+                const max = Math.max(...Object.values(muscleVolume));
+                const pct = max > 0 ? vol / max : 0;
+                const color = muscleColors[mg] ?? '#888';
+                return (
+                  <View key={mg} style={styles.muscleBarRow}>
+                    <View style={[styles.muscleDot, { backgroundColor: color }]} />
+                    <Text style={styles.muscleBarLabel}>{muscleGroupLabel(mg)}</Text>
+                    <View style={styles.muscleBarTrack}>
+                      <View style={[styles.muscleBarFill, { width: `${pct * 100}%` as any, backgroundColor: color }]} />
+                    </View>
+                    <Text style={styles.muscleBarVol}>{Math.round(vol / 1000)}t</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
           {/* Weekly volume chart */}
           {chartData && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Volume hebdomadaire</Text>
-              <BarChart
+              <LineChart
                 data={chartData}
                 width={width - 32}
                 height={180}
-                yAxisLabel=""
-                yAxisSuffix=""
+                yAxisSuffix=" kg"
                 chartConfig={{
                   backgroundColor: '#FFFFFF',
                   backgroundGradientFrom: '#FFFFFF',
@@ -162,8 +186,8 @@ export default function StatsScreen() {
                   barPercentage: 0.6,
                 }}
                 style={{ borderRadius: theme.radius.md }}
-                showValuesOnTopOfBars={false}
-                fromZero
+                bezier
+                withShadow={false}
               />
               <Text style={styles.chartNote}>Volume en kg (séries de travail uniquement)</Text>
             </View>
@@ -262,6 +286,13 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 80, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: theme.colors.text, marginTop: 16, marginBottom: 8 },
   emptyText: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  // Muscle volume bars
+  muscleBarRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  muscleDot: { width: 8, height: 8, borderRadius: 4 },
+  muscleBarLabel: { width: 72, fontSize: 12, color: theme.colors.textSecondary, fontWeight: '500' },
+  muscleBarTrack: { flex: 1, height: 8, backgroundColor: theme.colors.inputBackground, borderRadius: 4, overflow: 'hidden' },
+  muscleBarFill: { height: '100%', borderRadius: 4 },
+  muscleBarVol: { width: 36, fontSize: 11, color: theme.colors.textMuted, textAlign: 'right' },
   // Muscle heatmap
   muscleBubbleContainer: { alignItems: 'center', gap: 4, minWidth: 56 },
   muscleBubble: { marginBottom: 2 },

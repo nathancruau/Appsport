@@ -421,3 +421,21 @@ export async function exportWorkoutsCSV(): Promise<string> {
   }
   return lines.join('\n');
 }
+
+// ─── Four-week muscle volume ───────────────────────────────────────────────────
+
+export async function getFourWeekMuscleVolume(): Promise<Record<string, number>> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const cutoff = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
+  const result: Record<string, number> = {};
+  for (const w of workouts) {
+    if (new Date(w.date) < cutoff) continue;
+    for (const ex of w.exercises) {
+      const vol = ex.sets
+        .filter(s => s.completed && !s.isWarmup && s.reps != null && s.weight != null)
+        .reduce((sum, s) => sum + s.reps! * s.weight!, 0);
+      if (vol > 0) result[ex.muscleGroup] = (result[ex.muscleGroup] ?? 0) + vol;
+    }
+  }
+  return result;
+}

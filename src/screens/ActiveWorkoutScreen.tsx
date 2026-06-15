@@ -2,7 +2,7 @@ import React, { useReducer, useEffect, useRef, useCallback, useState } from 'rea
 import {
   View, Text, StyleSheet, TouchableOpacity,
   TextInput, Modal, ScrollView, Alert, KeyboardAvoidingView,
-  Platform, SectionList, Animated,
+  Platform, SectionList, Animated, PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ import {
 import { formatDuration, todayISO, muscleGroupLabel, estimateOneRM } from '../utils/calculations';
 
 const SUPERSET_COLOR = '#3B9EFF';
+const DELETE_W = 68;
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ type Action =
   | { type: 'ADD_EXERCISE'; exercise: Exercise; previousSets: WorkoutSet[]; bestSet?: BestSet }
   | { type: 'REMOVE_EXERCISE'; index: number }
   | { type: 'ADD_SET'; ei: number }
+  | { type: 'DUPLICATE_SET'; ei: number }
   | { type: 'REMOVE_SET'; ei: number; si: number }
   | { type: 'UPDATE_SET'; ei: number; si: number; field: 'reps' | 'weight'; value: string }
   | { type: 'UPDATE_RPE'; ei: number; si: number; value: string }
@@ -40,6 +42,14 @@ type Action =
   | { type: 'TOGGLE_SUPERSET'; index: number }
   | { type: 'TICK' }
   | { type: 'TOGGLE_PICKER' };
+
+interface SummaryData {
+  duration: number;
+  totalVolume: number;
+  totalSets: number;
+  prs: string[];
+  exerciseCount: number;
+}
 
 function makeEmptySet(prev?: WorkoutSet): ActiveSet {
   return {
@@ -73,9 +83,19 @@ function reducer(state: State, action: Action): State {
       exs[action.ei] = ex;
       return { ...state, exercises: exs };
     }
+    case 'DUPLICATE_SET': {
+      const exs = [...state.exercises];
+      const ex = { ...exs[action.ei] };
+      const last = ex.sets[ex.sets.length - 1];
+      if (!last) return state;
+      ex.sets = [...ex.sets, { ...last, completed: false, rpe: '' }];
+      exs[action.ei] = ex;
+      return { ...state, exercises: exs };
+    }
     case 'REMOVE_SET': {
       const exs = [...state.exercises];
       const ex = { ...exs[action.ei] };
+      if (ex.sets.length <= 1) return state;
       ex.sets = ex.sets.filter((_, i) => i !== action.si);
       exs[action.ei] = ex;
       return { ...state, exercises: exs };
@@ -130,6 +150,44 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+// ─── Swipeable row ─────────────────────────────────────────────────────────
+
+function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
+  const tx = useRef(new Animated.Value(0)).current;
+  const opened = useRef(false);
+
+  const pan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gs) =>
+      Math.abs(gs.dx) > 8 && Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5,
+    onPanResponderMove: (_, gs) => {
+      const base = opened.current ? -DELETE_W : 0;
+      tx.setValue(Math.max(-DELETE_W, Math.min(0, base + gs.dx)));
+    },
+    onPanResponderRelease: (_, gs) => {
+      const base = opened.current ? -DELETE_W : 0;
+      const final = base + gs.dx;
+      const shouldOpen = final < -DELETE_W / 2;
+      opened.current = shouldOpen;
+      Animated.spring(tx, { toValue: shouldOpen ? -DELETE_W : 0, useNativeDriver: true }).start();
+    },
+  })).current;
+
+  return (
+    <View style={styles.swipeContainer}>
+      <TouchableOpacity style={styles.swipeDeleteBtn} onPress={() => {
+        opened.current = false;
+        Animated.spring(tx, { toValue: 0, useNativeDriver: true }).start();
+        onDelete();
+      }}>
+        <Ionicons name="trash" size={16} color="#fff" />
+      </TouchableOpacity>
+      <Animated.View style={{ transform: [{ translateX: tx }] }} {...pan.panHandlers}>
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ActiveWorkoutScreen({ navigation, route }: any) {
@@ -146,13 +204,17 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const restTotal = useRef(90);
 
-  // PR banner
+  // PR tracking + banner
   const [prBanner, setPrBanner] = useState<string | null>(null);
   const prAnim = useRef(new Animated.Value(0)).current;
+  const prsAchievedRef = useRef<string[]>([]);
 
   // Save template modal
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
+
+  // Workout summary
+  const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -162,7 +224,6 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
       setAllExercises(exercises);
       setRestSettings(settings);
       timerRef.current = setInterval(() => dispatch({ type: 'TICK' }), 1000);
-
       const templateIds: number[] | undefined = route?.params?.templateExerciseIds;
       if (templateIds?.length) {
         for (const id of templateIds) {
@@ -204,7 +265,8 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     setRestRemaining(null);
   };
 
-  const showPR = (exerciseName: string) => {
+  const showPRBanner = (exerciseName: string) => {
+    prsAchievedRef.current = [...prsAchievedRef.current, exerciseName];
     setPrBanner(exerciseName);
     prAnim.setValue(0);
     Animated.sequence([
@@ -219,17 +281,14 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     const ae = state.exercises[ei];
     const set = ae.sets[si];
     const completing = !set.completed;
-
     dispatch({ type: 'TOGGLE_COMPLETE', ei, si });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
     if (completing) {
       const w = Number(set.weight), r = Number(set.reps);
       if (w > 0 && r > 0) {
         const newORM = estimateOneRM(w, r);
-        if (!ae.bestSet || newORM > ae.bestSet.oneRM) showPR(ae.exercise.name);
+        if (!ae.bestSet || newORM > ae.bestSet.oneRM) showPRBanner(ae.exercise.name);
       }
-      // Don't start rest timer if the next exercise is a superset pair
       const nextIsSuperset = state.exercises[ei + 1]?.isSuperset;
       if (restSettings.enabled && !nextIsSuperset) startRestTimer(restSettings.durationSeconds);
     }
@@ -243,8 +302,8 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
   const finishWorkout = async () => {
     if (state.exercises.length === 0) { Alert.alert('Séance vide', 'Ajoute au moins un exercice avant de terminer.'); return; }
-    const totalSets = state.exercises.flatMap((e) => e.sets).filter((s) => s.completed).length;
-    if (totalSets === 0) { Alert.alert('Aucune série complétée', 'Coche au moins une série avant de terminer.'); return; }
+    const completedSets = state.exercises.flatMap((e) => e.sets).filter((s) => s.completed && !s.isWarmup);
+    if (completedSets.length === 0) { Alert.alert('Aucune série complétée', 'Coche au moins une série avant de terminer.'); return; }
 
     Alert.alert('Terminer la séance ?', `${state.exercises.length} exercice(s) · ${formatDuration(state.elapsedSeconds)}`, [
       { text: 'Annuler', style: 'cancel' },
@@ -269,7 +328,14 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
               })),
             });
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            navigation.goBack();
+            const totalVolume = completedSets.reduce((sum, s) => sum + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0);
+            setSummaryData({
+              duration: state.elapsedSeconds,
+              totalVolume: Math.round(totalVolume),
+              totalSets: completedSets.length,
+              prs: [...new Set(prsAchievedRef.current)],
+              exerciseCount: state.exercises.length,
+            });
           } catch { Alert.alert('Erreur', 'Impossible de sauvegarder la séance.'); }
           finally { setSaving(false); }
         },
@@ -315,33 +381,36 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
   const restProgress = restRemaining != null ? restRemaining / restTotal.current : 0;
 
+  // On web, KAV causes layout issues — use plain View
+  const ContentWrapper = Platform.OS !== 'web' ? KeyboardAvoidingView : View;
+
   return (
     <View style={styles.container}>
       {/* PR Banner */}
       {prBanner && (
-        <Animated.View style={[styles.prBanner, { paddingTop: insets.top + 12, opacity: prAnim }]}>
+        <Animated.View style={[styles.prBanner, { paddingTop: insets.top + 8, opacity: prAnim }]}>
           <Text style={styles.prBannerText}>🏆 Nouveau record — {prBanner} !</Text>
         </Animated.View>
       )}
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity onPress={confirmDiscard} style={styles.headerBtn}>
+        <TouchableOpacity onPress={confirmDiscard} style={styles.headerBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
         </TouchableOpacity>
         <View style={styles.timerBox}>
           <Ionicons name="time-outline" size={14} color={theme.colors.textSecondary} />
           <Text style={styles.timer}>{formatDuration(state.elapsedSeconds)}</Text>
-          <TouchableOpacity onPress={() => setShowTimerSettings(true)} style={{ marginLeft: 6 }}>
+          <TouchableOpacity onPress={() => setShowTimerSettings(true)} style={{ marginLeft: 6 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="timer-outline" size={16} color={restSettings.enabled ? theme.colors.text : theme.colors.textMuted} />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={finishWorkout} style={[styles.headerBtn, styles.finishBtn]} disabled={saving}>
+        <TouchableOpacity onPress={finishWorkout} style={[styles.headerBtn, styles.finishBtn]} disabled={saving} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={styles.finishText}>{saving ? '…' : 'Terminer'}</Text>
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <ContentWrapper behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <TextInput
             style={styles.nameInput}
@@ -378,6 +447,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                     isTopOfSuperset={isTopOfSuperset}
                     supersetPartnerName={partnerName}
                     onAddSet={() => { dispatch({ type: 'ADD_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                    onDuplicateSet={() => { dispatch({ type: 'DUPLICATE_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
                     onRemoveSet={(si) => dispatch({ type: 'REMOVE_SET', ei, si })}
                     onUpdateSet={(si, field, value) => dispatch({ type: 'UPDATE_SET', ei, si, field, value })}
                     onUpdateRPE={(si, value) => dispatch({ type: 'UPDATE_RPE', ei, si, value })}
@@ -406,7 +476,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
           <View style={{ height: 40 }} />
         </ScrollView>
-      </KeyboardAvoidingView>
+      </ContentWrapper>
 
       {/* Rest Timer Overlay */}
       {restRemaining !== null && (
@@ -426,7 +496,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
         </View>
       )}
 
-      {/* Exercise Picker — conditionally mounted to avoid invisible touch blocker */}
+      {/* Exercise Picker */}
       {state.showPicker && (
         <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
           <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
@@ -551,6 +621,46 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
           </View>
         </Modal>
       )}
+
+      {/* Workout Summary Modal */}
+      {summaryData && (
+        <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.summaryModal, { paddingTop: Math.max(insets.top, 24), paddingBottom: Math.max(insets.bottom, 24) }]}>
+            <Text style={styles.summaryEmoji}>🎉</Text>
+            <Text style={styles.summaryTitle}>Séance terminée !</Text>
+
+            <View style={styles.summaryStats}>
+              <View style={styles.summaryStat}>
+                <Text style={styles.summaryStatVal}>{formatDuration(summaryData.duration)}</Text>
+                <Text style={styles.summaryStatLabel}>Durée</Text>
+              </View>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryStat}>
+                <Text style={styles.summaryStatVal}>{summaryData.totalVolume.toLocaleString('fr')} kg</Text>
+                <Text style={styles.summaryStatLabel}>Volume</Text>
+              </View>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryStat}>
+                <Text style={styles.summaryStatVal}>{summaryData.totalSets}</Text>
+                <Text style={styles.summaryStatLabel}>Séries</Text>
+              </View>
+            </View>
+
+            {summaryData.prs.length > 0 && (
+              <View style={styles.summaryPRs}>
+                <Text style={styles.summaryPRTitle}>🏆 Records battus</Text>
+                {summaryData.prs.map((name, i) => (
+                  <Text key={i} style={styles.summaryPRName}>{name}</Text>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity style={styles.summaryCloseBtn} onPress={() => navigation.goBack()}>
+              <Text style={styles.summaryCloseBtnText}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -559,7 +669,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
 function ExerciseBlock({
   ae, ei, isFirst, isLast, isTopOfSuperset, supersetPartnerName,
-  onAddSet, onRemoveSet, onUpdateSet, onUpdateRPE, onToggleComplete,
+  onAddSet, onDuplicateSet, onRemoveSet, onUpdateSet, onUpdateRPE, onToggleComplete,
   onRemoveExercise, onMoveUp, onMoveDown, onToggleSuperset,
 }: {
   ae: ActiveExercise; ei: number;
@@ -567,6 +677,7 @@ function ExerciseBlock({
   isTopOfSuperset: boolean;
   supersetPartnerName?: string;
   onAddSet: () => void;
+  onDuplicateSet: () => void;
   onRemoveSet: (si: number) => void;
   onUpdateSet: (si: number, field: 'reps' | 'weight', value: string) => void;
   onUpdateRPE: (si: number, value: string) => void;
@@ -579,6 +690,18 @@ function ExerciseBlock({
   const prevWorking = ae.previousSets.filter((s) => !s.isWarmup && s.completed);
   const muscleColor = muscleColors[ae.exercise.muscleGroup] ?? '#888';
   const inSuperset = ae.isSuperset || isTopOfSuperset;
+
+  // Double-tap detection for "add set"
+  const lastTapRef = useRef(0);
+  const handleAddTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 350) {
+      onDuplicateSet();
+    } else {
+      onAddSet();
+    }
+    lastTapRef.current = now;
+  };
 
   return (
     <View style={[styles.exBlock, inSuperset && styles.exBlockSuperset]}>
@@ -613,14 +736,13 @@ function ExerciseBlock({
 
       <Text style={styles.exName}>{ae.exercise.name}</Text>
 
-      {/* Superset partner label */}
       {supersetPartnerName && (
         <View style={styles.supersetPartnerRow}>
           <Ionicons name="swap-vertical" size={12} color={SUPERSET_COLOR} />
           <Text style={styles.supersetPartnerText}>Superset avec {supersetPartnerName}</Text>
         </View>
       )}
-      {isTopOfSuperset && (
+      {isTopOfSuperset && !ae.isSuperset && (
         <View style={styles.supersetPartnerRow}>
           <Ionicons name="swap-vertical" size={12} color={SUPERSET_COLOR} />
           <Text style={styles.supersetPartnerText}>Enchaîner sans repos</Text>
@@ -645,52 +767,60 @@ function ExerciseBlock({
         const prev = prevWorking[si];
         return (
           <React.Fragment key={si}>
-            <View style={[styles.setRow, s.completed && styles.setRowDone]}>
-              <Text style={[styles.setNum, s.completed && styles.setNumDone]}>{si + 1}</Text>
-              <Text style={styles.setPrev}>{prev ? `${prev.weight}×${prev.reps}` : '—'}</Text>
-              <TextInput
-                style={[styles.setInput, { width: 72 }]}
-                value={s.weight}
-                onChangeText={(v) => onUpdateSet(si, 'weight', v)}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={theme.colors.textMuted}
-                selectTextOnFocus
-              />
-              <TextInput
-                style={[styles.setInput, { width: 60 }]}
-                value={s.reps}
-                onChangeText={(v) => onUpdateSet(si, 'reps', v)}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={theme.colors.textMuted}
-                selectTextOnFocus
-              />
-              <TouchableOpacity onPress={() => onToggleComplete(si)} style={[styles.checkBtn, s.completed && styles.checkBtnDone]}>
-                <Ionicons name={s.completed ? 'checkmark' : 'ellipse-outline'} size={18} color={s.completed ? '#fff' : theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
+            <SwipeableRow onDelete={() => onRemoveSet(si)}>
+              <View style={[styles.setRow, s.completed && styles.setRowDone]}>
+                <Text style={[styles.setNum, s.completed && styles.setNumDone]}>{si + 1}</Text>
+                <Text style={styles.setPrev}>{prev ? `${prev.weight}×${prev.reps}` : '—'}</Text>
+                <TextInput
+                  style={[styles.setInput, { width: 72 }]}
+                  value={s.weight}
+                  onChangeText={(v) => onUpdateSet(si, 'weight', v)}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={theme.colors.textMuted}
+                  selectTextOnFocus
+                />
+                <TextInput
+                  style={[styles.setInput, { width: 60 }]}
+                  value={s.reps}
+                  onChangeText={(v) => onUpdateSet(si, 'reps', v)}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={theme.colors.textMuted}
+                  selectTextOnFocus
+                />
+                <TouchableOpacity onPress={() => onToggleComplete(si)} style={[styles.checkBtn, s.completed && styles.checkBtnDone]}>
+                  <Ionicons name={s.completed ? 'checkmark' : 'ellipse-outline'} size={18} color={s.completed ? '#fff' : theme.colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            </SwipeableRow>
             {s.completed && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.rpeScrollRow} contentContainerStyle={styles.rpeScrollContent}>
+              <View style={styles.rpeBlock}>
                 <Text style={styles.rpeLabel}>RPE</Text>
-                {['1','2','3','4','5','6','7','8','9','10'].map((val) => (
-                  <TouchableOpacity
-                    key={val}
-                    style={[styles.rpeChip, s.rpe === val && styles.rpeChipActive]}
-                    onPress={() => onUpdateRPE(si, s.rpe === val ? '' : val)}
-                  >
-                    <Text style={[styles.rpeChipText, s.rpe === val && styles.rpeChipTextActive]}>{val}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                <View style={styles.rpeRow}>
+                  {['1','2','3','4','5'].map((val) => (
+                    <TouchableOpacity key={val} style={[styles.rpeChip, s.rpe === val && styles.rpeChipActive]} onPress={() => onUpdateRPE(si, s.rpe === val ? '' : val)}>
+                      <Text style={[styles.rpeChipText, s.rpe === val && styles.rpeChipTextActive]}>{val}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.rpeRow}>
+                  {['6','7','8','9','10'].map((val) => (
+                    <TouchableOpacity key={val} style={[styles.rpeChip, s.rpe === val && styles.rpeChipActive]} onPress={() => onUpdateRPE(si, s.rpe === val ? '' : val)}>
+                      <Text style={[styles.rpeChipText, s.rpe === val && styles.rpeChipTextActive]}>{val}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             )}
           </React.Fragment>
         );
       })}
 
-      <TouchableOpacity style={styles.addSetBtn} onPress={onAddSet}>
+      <TouchableOpacity style={styles.addSetBtn} onPress={handleAddTap}>
         <Ionicons name="add" size={16} color={theme.colors.textSecondary} />
         <Text style={styles.addSetText}>Ajouter une série</Text>
+        <Text style={styles.addSetHint}>  double-tap = dupliquer</Text>
       </TouchableOpacity>
     </View>
   );
@@ -701,7 +831,6 @@ function ExerciseBlock({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
 
-  // PR Banner
   prBanner: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100,
     backgroundColor: '#1A1A1A', paddingVertical: 12, paddingHorizontal: 16,
@@ -709,12 +838,10 @@ const styles = StyleSheet.create({
   },
   prBannerText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
-  // Header
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.md,
     backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border,
-    zIndex: 10,
   },
   headerBtn: { paddingHorizontal: 8, paddingVertical: 4, minWidth: 70 },
   timerBox: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -727,11 +854,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md, padding: 12, fontSize: 16, color: theme.colors.text,
   },
 
-  // Superset connector between blocks
   supersetConnector: {
     flexDirection: 'row', alignItems: 'center',
-    marginHorizontal: theme.spacing.md + 12, marginVertical: -2,
-    zIndex: 1,
+    marginHorizontal: theme.spacing.md + 12, marginVertical: -2, zIndex: 1,
   },
   supersetLine: { flex: 1, height: 2, backgroundColor: SUPERSET_COLOR, opacity: 0.4 },
   supersetBadge: {
@@ -741,40 +866,38 @@ const styles = StyleSheet.create({
   },
   supersetBadgeText: { fontSize: 10, fontWeight: '800', color: SUPERSET_COLOR, letterSpacing: 0.8 },
 
-  // Exercise block
   exBlock: {
     backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
     marginHorizontal: theme.spacing.md, marginBottom: theme.spacing.sm, padding: theme.spacing.md,
   },
-  exBlockSuperset: {
-    borderLeftWidth: 3, borderLeftColor: SUPERSET_COLOR,
-  },
+  exBlockSuperset: { borderLeftWidth: 3, borderLeftColor: SUPERSET_COLOR },
   exHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   exHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   muscleTag: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3 },
   muscleTagText: { fontSize: 11, fontWeight: '600' },
   dot: { width: 7, height: 7, borderRadius: 4 },
   exName: { fontSize: 17, fontWeight: '700', color: theme.colors.text, marginBottom: 2 },
-
-  // Superset partner label
   supersetPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
   supersetPartnerText: { fontSize: 12, color: SUPERSET_COLOR, fontWeight: '600' },
-
   bestLabel: { fontSize: 12, color: theme.colors.textMuted, marginBottom: 10, fontStyle: 'italic' },
 
-  // SS badge
-  ssBtn: {
-    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5,
-    borderWidth: 1.5, borderColor: theme.colors.border,
-  },
+  ssBtn: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5, borderWidth: 1.5, borderColor: theme.colors.border },
   ssBtnActive: { backgroundColor: SUPERSET_COLOR, borderColor: SUPERSET_COLOR },
   ssBtnText: { fontSize: 10, fontWeight: '800', color: theme.colors.textMuted, letterSpacing: 0.5 },
   ssBtnTextActive: { color: '#fff' },
 
-  // Set rows
   setHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, paddingHorizontal: 2 },
   setCell: { fontSize: 11, color: theme.colors.textMuted, fontWeight: '600', textTransform: 'uppercase' },
-  setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2, gap: 4, borderRadius: theme.radius.sm, padding: 4 },
+
+  // Swipeable
+  swipeContainer: { overflow: 'hidden', borderRadius: theme.radius.sm, marginBottom: 2 },
+  swipeDeleteBtn: {
+    position: 'absolute', right: 0, top: 0, bottom: 0, width: DELETE_W,
+    backgroundColor: theme.colors.error, justifyContent: 'center', alignItems: 'center',
+    borderRadius: theme.radius.sm,
+  },
+
+  setRow: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 4, backgroundColor: theme.colors.card },
   setRowDone: { backgroundColor: 'rgba(26,26,26,0.06)' },
   setNum: { width: 28, fontSize: 14, fontWeight: '600', color: theme.colors.textSecondary, textAlign: 'center' },
   setNumDone: { color: theme.colors.text },
@@ -786,20 +909,22 @@ const styles = StyleSheet.create({
   checkBtn: { width: 36, height: 36, borderRadius: theme.radius.sm, backgroundColor: theme.colors.inputBackground, alignItems: 'center', justifyContent: 'center' },
   checkBtnDone: { backgroundColor: theme.colors.text },
 
-  // RPE row
-  rpeScrollRow: { marginBottom: 4 },
-  rpeScrollContent: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingVertical: 4 },
-  rpeLabel: { fontSize: 10, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 2 },
+  // RPE - 2 rows
+  rpeBlock: { paddingHorizontal: 4, paddingBottom: 6, paddingTop: 2, gap: 4 },
+  rpeLabel: { fontSize: 10, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  rpeRow: { flexDirection: 'row', gap: 4 },
   rpeChip: {
-    paddingHorizontal: 9, paddingVertical: 4, borderRadius: theme.radius.full,
+    flex: 1, paddingVertical: 5, borderRadius: theme.radius.full,
     borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.inputBackground,
+    alignItems: 'center',
   },
   rpeChipActive: { backgroundColor: theme.colors.text, borderColor: theme.colors.text },
   rpeChipText: { fontSize: 12, fontWeight: '600', color: theme.colors.textSecondary },
   rpeChipTextActive: { color: '#fff' },
 
-  addSetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8, paddingVertical: 10, borderRadius: theme.radius.sm, borderWidth: 1, borderColor: theme.colors.border, borderStyle: 'dashed' },
+  addSetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 8, paddingVertical: 10, borderRadius: theme.radius.sm, borderWidth: 1, borderColor: theme.colors.border, borderStyle: 'dashed' },
   addSetText: { color: theme.colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  addSetHint: { color: theme.colors.textMuted, fontSize: 11 },
 
   addExBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -811,7 +936,6 @@ const styles = StyleSheet.create({
   saveTemplateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8 },
   saveTemplateText: { color: theme.colors.textSecondary, fontSize: 13 },
 
-  // Rest timer
   restOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16 },
   restCard: {
     backgroundColor: '#1A1A1A', borderRadius: 24, padding: 20, alignItems: 'center',
@@ -824,11 +948,9 @@ const styles = StyleSheet.create({
   restSkip: { paddingHorizontal: 24, paddingVertical: 8, borderRadius: theme.radius.full, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
   restSkipText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '600' },
 
-  // Empty
   emptyExercises: { alignItems: 'center', paddingVertical: 48, gap: 12 },
   emptyText: { color: theme.colors.textMuted, fontSize: 15 },
 
-  // Modals
   modal: { flex: 1, backgroundColor: theme.colors.background },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: theme.spacing.md, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   modalTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text },
@@ -841,7 +963,6 @@ const styles = StyleSheet.create({
   exerciseRowAdded: { backgroundColor: theme.colors.inputBackground },
   exerciseName: { fontSize: 15, color: theme.colors.text },
 
-  // Settings
   settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
   settingLabel: { fontSize: 16, color: theme.colors.text, fontWeight: '500' },
   settingSubLabel: { fontSize: 13, fontWeight: '600', color: theme.colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
@@ -856,4 +977,32 @@ const styles = StyleSheet.create({
   durationChipTextActive: { color: '#fff' },
   templateInput: { backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.md, padding: 12, fontSize: 16, color: theme.colors.text, marginBottom: 12 },
   templateExList: { fontSize: 13, color: theme.colors.textMuted, lineHeight: 20 },
+
+  // Summary modal
+  summaryModal: {
+    flex: 1, backgroundColor: theme.colors.background,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
+  },
+  summaryEmoji: { fontSize: 56, marginBottom: 12 },
+  summaryTitle: { fontSize: 26, fontWeight: '800', color: theme.colors.text, marginBottom: 32 },
+  summaryStats: {
+    flexDirection: 'row', backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.lg, padding: 20, width: '100%',
+    alignItems: 'center', justifyContent: 'space-around', marginBottom: 24,
+  },
+  summaryStat: { alignItems: 'center', flex: 1 },
+  summaryStatVal: { fontSize: 20, fontWeight: '800', color: theme.colors.text, marginBottom: 4 },
+  summaryStatLabel: { fontSize: 11, color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryDivider: { width: 1, height: 40, backgroundColor: theme.colors.border },
+  summaryPRs: {
+    width: '100%', backgroundColor: '#FFF9E6', borderRadius: theme.radius.md,
+    padding: 16, marginBottom: 24,
+  },
+  summaryPRTitle: { fontSize: 14, fontWeight: '700', color: '#B8860B', marginBottom: 8 },
+  summaryPRName: { fontSize: 14, color: theme.colors.text, marginBottom: 4 },
+  summaryCloseBtn: {
+    width: '100%', backgroundColor: theme.colors.text, borderRadius: theme.radius.lg,
+    paddingVertical: 16, alignItems: 'center',
+  },
+  summaryCloseBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
 });
