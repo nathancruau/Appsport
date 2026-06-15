@@ -1,0 +1,314 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Exercise, Workout, WorkoutSet, PersonalRecord } from '../types';
+import { estimateOneRM } from '../utils/calculations';
+
+// ─── ID generator ─────────────────────────────────────────────────────────────
+
+let _nextId = Date.now();
+function nextId(): number { return ++_nextId; }
+
+// ─── Storage keys ─────────────────────────────────────────────────────────────
+
+const KEY_EXERCISES = 'exercises';
+const KEY_WORKOUTS = 'workouts';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function getJSON<T>(key: string, fallback: T): Promise<T> {
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    return raw != null ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function setJSON<T>(key: string, value: T): Promise<void> {
+  await AsyncStorage.setItem(key, JSON.stringify(value));
+}
+
+// ─── Internal types ───────────────────────────────────────────────────────────
+
+interface StoredWorkoutExercise {
+  id: number;
+  exerciseId: number;
+  exerciseName: string;
+  muscleGroup: string;
+  orderIndex: number;
+  sets: WorkoutSet[];
+}
+
+interface StoredWorkout {
+  id: number;
+  name: string | null;
+  date: string;
+  duration: number | null;
+  createdAt: string;
+  exercises: StoredWorkoutExercise[];
+}
+
+// ─── Seed data ────────────────────────────────────────────────────────────────
+
+const SEED: [string, string, Exercise['exerciseType']][] = [
+  ['Développé couché barre', 'chest', 'strength'],
+  ['Développé couché haltères', 'chest', 'strength'],
+  ['Développé incliné', 'chest', 'strength'],
+  ['Développé décliné', 'chest', 'strength'],
+  ['Écarté poulie', 'chest', 'strength'],
+  ['Pompes', 'chest', 'bodyweight'],
+  ['Tractions', 'back', 'bodyweight'],
+  ['Rowing barre', 'back', 'strength'],
+  ['Tirage poulie haute', 'back', 'strength'],
+  ['Rowing haltère', 'back', 'strength'],
+  ['Soulevé de terre', 'back', 'strength'],
+  ['Pull-over', 'back', 'strength'],
+  ['Squat barre', 'legs', 'strength'],
+  ['Leg press', 'legs', 'strength'],
+  ['Fentes', 'legs', 'strength'],
+  ['Leg curl', 'legs', 'strength'],
+  ['Leg extension', 'legs', 'strength'],
+  ['Mollets machine', 'legs', 'strength'],
+  ['Soulevé de terre roumain', 'legs', 'strength'],
+  ['Développé militaire', 'shoulders', 'strength'],
+  ['Élévations latérales', 'shoulders', 'strength'],
+  ['Élévations frontales', 'shoulders', 'strength'],
+  ['Oiseau haltères', 'shoulders', 'strength'],
+  ['Curl barre', 'arms', 'strength'],
+  ['Curl haltères', 'arms', 'strength'],
+  ['Curl marteau', 'arms', 'strength'],
+  ['Triceps poulie', 'arms', 'strength'],
+  ['Dips', 'arms', 'bodyweight'],
+  ['Extension triceps', 'arms', 'strength'],
+  ['Crunch', 'core', 'bodyweight'],
+  ['Planche', 'core', 'bodyweight'],
+  ['Ab wheel', 'core', 'bodyweight'],
+  ['Relevé de jambes', 'core', 'bodyweight'],
+];
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+export async function initDB(): Promise<void> {
+  const exercises = await getJSON<Exercise[]>(KEY_EXERCISES, []);
+  if (exercises.length === 0) {
+    const seeded: Exercise[] = SEED.map(([name, muscleGroup, exerciseType], i) => ({
+      id: i + 1,
+      name,
+      muscleGroup,
+      exerciseType,
+      createdAt: new Date().toISOString(),
+    }));
+    await setJSON(KEY_EXERCISES, seeded);
+    _nextId = Math.max(_nextId, SEED.length + 1);
+  }
+}
+
+// ─── Exercises ────────────────────────────────────────────────────────────────
+
+export async function getAllExercises(): Promise<Exercise[]> {
+  return getJSON<Exercise[]>(KEY_EXERCISES, []);
+}
+
+export async function createExercise(name: string, muscleGroup: string, exerciseType: string): Promise<Exercise> {
+  const exercises = await getAllExercises();
+  const exercise: Exercise = {
+    id: nextId(),
+    name,
+    muscleGroup,
+    exerciseType: exerciseType as Exercise['exerciseType'],
+    createdAt: new Date().toISOString(),
+  };
+  await setJSON(KEY_EXERCISES, [...exercises, exercise]);
+  return exercise;
+}
+
+// ─── Save workout ─────────────────────────────────────────────────────────────
+
+export async function saveWorkout(params: {
+  name: string | null;
+  date: string;
+  duration: number;
+  exercises: { exerciseId: number; sets: { reps: number | null; weight: number | null; isWarmup: boolean; completed: boolean }[] }[];
+}): Promise<number> {
+  const allExercises = await getAllExercises();
+  const exMap = new Map(allExercises.map((e) => [e.id, e]));
+
+  const workoutId = nextId();
+  const storedExercises: StoredWorkoutExercise[] = params.exercises.map((ex, i) => {
+    const info = exMap.get(ex.exerciseId);
+    const weId = nextId();
+    return {
+      id: weId,
+      exerciseId: ex.exerciseId,
+      exerciseName: info?.name ?? '',
+      muscleGroup: info?.muscleGroup ?? 'other',
+      orderIndex: i,
+      sets: ex.sets.map((s, j) => ({
+        id: nextId(),
+        workoutExerciseId: weId,
+        setNumber: j + 1,
+        reps: s.reps,
+        weight: s.weight,
+        duration: null,
+        isWarmup: s.isWarmup,
+        completed: s.completed,
+      })),
+    };
+  });
+
+  const workout: StoredWorkout = {
+    id: workoutId,
+    name: params.name,
+    date: params.date,
+    duration: params.duration,
+    createdAt: new Date().toISOString(),
+    exercises: storedExercises,
+  };
+
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  await setJSON(KEY_WORKOUTS, [workout, ...workouts]);
+  return workoutId;
+}
+
+// ─── Recent workouts ──────────────────────────────────────────────────────────
+
+export async function getRecentWorkouts(limit = 20): Promise<(Workout & { exerciseCount: number; totalVolume: number })[]> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  return workouts.slice(0, limit).map((w) => {
+    const totalVolume = w.exercises
+      .flatMap((ex) => ex.sets)
+      .filter((s) => s.completed && !s.isWarmup && s.reps != null && s.weight != null)
+      .reduce((sum, s) => sum + s.reps! * s.weight!, 0);
+    return {
+      id: w.id,
+      name: w.name,
+      date: w.date,
+      duration: w.duration,
+      notes: null,
+      createdAt: w.createdAt,
+      exerciseCount: w.exercises.length,
+      totalVolume: Math.round(totalVolume),
+    };
+  });
+}
+
+// ─── Workout detail ───────────────────────────────────────────────────────────
+
+export interface WorkoutExerciseDetail {
+  id: number;
+  workoutId: number;
+  exerciseId: number;
+  orderIndex: number;
+  exerciseName: string;
+  muscleGroup: string;
+  sets: WorkoutSet[];
+}
+
+export async function getWorkoutDetail(workoutId: number): Promise<{ workout: Workout; exercises: WorkoutExerciseDetail[] }> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const w = workouts.find((x) => x.id === workoutId);
+  if (!w) throw new Error('Workout not found');
+  return {
+    workout: { id: w.id, name: w.name, date: w.date, duration: w.duration, notes: null, createdAt: w.createdAt },
+    exercises: w.exercises.map((ex) => ({
+      id: ex.id, workoutId: w.id, exerciseId: ex.exerciseId,
+      orderIndex: ex.orderIndex, exerciseName: ex.exerciseName,
+      muscleGroup: ex.muscleGroup, sets: ex.sets,
+    })),
+  };
+}
+
+// ─── Exercise history ─────────────────────────────────────────────────────────
+
+export async function getExerciseHistory(exerciseId: number): Promise<{
+  date: string; workoutId: number; workoutName: string | null;
+  sets: WorkoutSet[]; totalVolume: number; bestWeight: number; estimatedOneRM: number;
+}[]> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  return workouts
+    .filter((w) => w.exercises.some((ex) => ex.exerciseId === exerciseId))
+    .reverse()
+    .map((w) => {
+      const ex = w.exercises.find((e) => e.exerciseId === exerciseId)!;
+      const working = ex.sets.filter((s) => s.completed && !s.isWarmup && s.reps != null && s.weight != null);
+      return {
+        date: w.date,
+        workoutId: w.id,
+        workoutName: w.name,
+        sets: ex.sets,
+        totalVolume: Math.round(working.reduce((sum, s) => sum + s.reps! * s.weight!, 0)),
+        bestWeight: working.length > 0 ? Math.max(...working.map((s) => s.weight!)) : 0,
+        estimatedOneRM: working.length > 0 ? Math.max(...working.map((s) => estimateOneRM(s.weight!, s.reps!))) : 0,
+      };
+    });
+}
+
+export async function getLastWorkoutSets(exerciseId: number): Promise<WorkoutSet[]> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const last = workouts.find((w) => w.exercises.some((ex) => ex.exerciseId === exerciseId));
+  if (!last) return [];
+  return last.exercises.find((ex) => ex.exerciseId === exerciseId)?.sets ?? [];
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+
+export async function getAllPersonalRecords(): Promise<(PersonalRecord & { exerciseName: string; muscleGroup: string })[]> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const best = new Map<number, { oneRM: number; weight: number; reps: number; date: string; workoutId: number; exerciseName: string; muscleGroup: string }>();
+
+  for (const w of workouts) {
+    for (const ex of w.exercises) {
+      for (const s of ex.sets.filter((s) => s.completed && !s.isWarmup && s.reps != null && s.weight != null)) {
+        const orm = estimateOneRM(s.weight!, s.reps!);
+        if (!best.has(ex.exerciseId) || orm > best.get(ex.exerciseId)!.oneRM) {
+          best.set(ex.exerciseId, { oneRM: orm, weight: s.weight!, reps: s.reps!, date: w.date, workoutId: w.id, exerciseName: ex.exerciseName, muscleGroup: ex.muscleGroup });
+        }
+      }
+    }
+  }
+
+  return [...best.entries()].map(([exerciseId, data], i) => ({
+    id: i + 1, exerciseId, weight: data.weight, reps: data.reps, oneRM: data.oneRM,
+    workoutId: data.workoutId, date: data.date, exerciseName: data.exerciseName, muscleGroup: data.muscleGroup,
+  }));
+}
+
+export async function getWeeklyVolume(): Promise<{ week: string; volume: number; count: number }[]> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const cutoff = new Date(Date.now() - 84 * 24 * 60 * 60 * 1000);
+  const weekMap = new Map<string, { volume: number; count: number }>();
+
+  for (const w of workouts) {
+    const d = new Date(w.date);
+    if (d < cutoff) continue;
+    const jan1 = new Date(d.getFullYear(), 0, 1);
+    const weekNum = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7);
+    const week = `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+    const vol = w.exercises
+      .flatMap((ex) => ex.sets)
+      .filter((s) => s.completed && !s.isWarmup && s.reps != null && s.weight != null)
+      .reduce((sum, s) => sum + s.reps! * s.weight!, 0);
+    const prev = weekMap.get(week) ?? { volume: 0, count: 0 };
+    weekMap.set(week, { volume: prev.volume + Math.round(vol), count: prev.count + 1 });
+  }
+
+  return [...weekMap.entries()]
+    .map(([week, data]) => ({ week, ...data }))
+    .sort((a, b) => a.week.localeCompare(b.week));
+}
+
+export async function getTotalStats(): Promise<{ totalWorkouts: number; totalVolume: number; totalSets: number }> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  let totalVolume = 0;
+  let totalSets = 0;
+  for (const w of workouts) {
+    for (const ex of w.exercises) {
+      for (const s of ex.sets) {
+        if (s.completed && !s.isWarmup) {
+          totalSets++;
+          if (s.reps != null && s.weight != null) totalVolume += s.reps * s.weight;
+        }
+      }
+    }
+  }
+  return { totalWorkouts: workouts.length, totalVolume: Math.round(totalVolume), totalSets };
+}
