@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  StatusBar, ActivityIndicator,
+  StatusBar, ActivityIndicator, ScrollView, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { version } from '../../package.json';
@@ -9,8 +9,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
-import { RootStackParamList, Workout } from '../types';
-import { getRecentWorkouts } from '../database/database';
+import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
+import { getRecentWorkouts, getTemplates, deleteTemplate } from '../database/database';
 import { formatDate, formatDuration, muscleGroupLabel } from '../utils/calculations';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList> };
@@ -20,15 +20,20 @@ type WorkoutItem = Workout & { exerciseCount: number; totalVolume: number };
 export default function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
+  const [templates, setTemplates] = useState<WorkoutTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       setLoading(true);
-      getRecentWorkouts(10).then((data) => {
+      Promise.all([
+        getRecentWorkouts(10),
+        getTemplates(),
+      ]).then(([data, tmpl]) => {
         if (active) {
           setWorkouts(data);
+          setTemplates(tmpl);
           setLoading(false);
         }
       });
@@ -101,6 +106,39 @@ export default function HomeScreen({ navigation }: Props) {
         <Ionicons name="add-circle" size={24} color="#fff" />
         <Text style={styles.startButtonText}>Nouvelle séance</Text>
       </TouchableOpacity>
+
+      {templates.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Démarrage rapide</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: theme.spacing.md }}
+            contentContainerStyle={{ gap: 8, paddingRight: 16 }}
+          >
+            {templates.map((t) => (
+              <TouchableOpacity
+                key={t.id}
+                style={styles.templateChip}
+                onPress={() => navigation.navigate('ActiveWorkout', { templateExerciseIds: t.exerciseIds })}
+                onLongPress={() => {
+                  Alert.alert('Supprimer le template ?', `"${t.name}" sera supprimé.`, [
+                    { text: 'Annuler', style: 'cancel' },
+                    { text: 'Supprimer', style: 'destructive', onPress: async () => {
+                      await deleteTemplate(t.id);
+                      setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+                    }},
+                  ]);
+                }}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="flash" size={14} color={theme.colors.primary} />
+                <Text style={styles.templateChipText}>{t.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </>
+      )}
 
       {loading ? (
         <ActivityIndicator color={theme.colors.primary} style={{ marginTop: 40 }} />
@@ -176,6 +214,18 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  templateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  templateChipText: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
   card: {
     backgroundColor: theme.colors.card,
     borderRadius: theme.radius.md,

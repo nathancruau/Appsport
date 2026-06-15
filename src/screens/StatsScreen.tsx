@@ -6,7 +6,7 @@ import { BarChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
 import { PersonalRecord } from '../types';
-import { getAllPersonalRecords, getWeeklyVolume, getTotalStats } from '../database/database';
+import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity } from '../database/database';
 import { muscleGroupLabel, formatDate, formatWeight } from '../utils/calculations';
 
 const { width } = Dimensions.get('window');
@@ -16,6 +16,7 @@ export default function StatsScreen() {
   const [prs, setPrs] = useState<(PersonalRecord & { exerciseName: string; muscleGroup: string })[]>([]);
   const [weeklyVol, setWeeklyVol] = useState<{ week: string; volume: number; count: number }[]>([]);
   const [totals, setTotals] = useState({ totalWorkouts: 0, totalVolume: 0, totalSets: 0 });
+  const [muscleActivity, setMuscleActivity] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -25,11 +26,13 @@ export default function StatsScreen() {
         getAllPersonalRecords(),
         getWeeklyVolume(),
         getTotalStats(),
-      ]).then(([p, w, t]) => {
+        getWeekMuscleActivity(),
+      ]).then(([p, w, t, m]) => {
         if (active) {
           setPrs(p);
           setWeeklyVol(w);
           setTotals(t);
+          setMuscleActivity(m);
           setLoading(false);
         }
       });
@@ -59,6 +62,10 @@ export default function StatsScreen() {
     return acc;
   }, {});
 
+  // Muscle heatmap data
+  const MUSCLE_GROUPS = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core', 'cardio', 'other'] as const;
+  const maxSets = Math.max(...MUSCLE_GROUPS.map((mg) => muscleActivity[mg] ?? 0), 1);
+
   return (
     <ScrollView
       style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}
@@ -66,6 +73,26 @@ export default function StatsScreen() {
       showsVerticalScrollIndicator={false}
     >
       <Text style={styles.pageTitle}>Statistiques</Text>
+
+      {/* Muscle heatmap - always shown */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Cette semaine</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
+          {MUSCLE_GROUPS.map((mg) => {
+            const sets = muscleActivity[mg] ?? 0;
+            const opacity = sets === 0 ? 0.2 : Math.min(0.2 + (sets / Math.max(maxSets, 15)) * 0.8, 1);
+            const size = sets === 0 ? 44 : Math.min(44 + (sets / Math.max(maxSets, 15)) * 20, 64);
+            const color = muscleColors[mg] ?? '#888';
+            return (
+              <View key={mg} style={styles.muscleBubbleContainer}>
+                <View style={[styles.muscleBubble, { width: size, height: size, backgroundColor: color, opacity, borderRadius: size / 2 }]} />
+                <Text style={styles.muscleBubbleLabel}>{muscleGroupLabel(mg)}</Text>
+                <Text style={styles.muscleBubbleCount}>{sets}</Text>
+              </View>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {!hasData ? (
         <View style={styles.empty}>
@@ -209,4 +236,9 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 80, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: theme.colors.text, marginTop: 16, marginBottom: 8 },
   emptyText: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  // Muscle heatmap
+  muscleBubbleContainer: { alignItems: 'center', gap: 4, minWidth: 56 },
+  muscleBubble: { marginBottom: 2 },
+  muscleBubbleLabel: { fontSize: 10, color: theme.colors.textSecondary, fontWeight: '600', textAlign: 'center' },
+  muscleBubbleCount: { fontSize: 11, color: theme.colors.textMuted, textAlign: 'center' },
 });
