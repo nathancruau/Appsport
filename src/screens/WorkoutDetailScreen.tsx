@@ -274,10 +274,10 @@ export default function WorkoutDetailScreen() {
               {editModal.ex.trackingType === 'time' ? (
                 <Text style={[styles.editCell, { flex: 1 }]}>Durée (s)</Text>
               ) : (
-                <>
+                <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
                   <Text style={[styles.editCell, { flex: 1 }]}>Poids (kg)</Text>
                   <Text style={[styles.editCell, { flex: 1 }]}>Reps</Text>
-                </>
+                </View>
               )}
             </View>
             {editModal.sets.map((s, i) => (
@@ -296,9 +296,9 @@ export default function WorkoutDetailScreen() {
                     selectTextOnFocus
                   />
                 ) : (
-                  <>
+                  <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
                     <TextInput
-                      style={[styles.editInput, { flex: 1 }]}
+                      style={[styles.editInput, { flex: 1, minWidth: 0 }]}
                       value={s.weight}
                       onChangeText={(v) => setEditModal((prev) => prev ? {
                         ...prev, sets: prev.sets.map((x, xi) => xi === i ? { ...x, weight: v } : x),
@@ -309,7 +309,7 @@ export default function WorkoutDetailScreen() {
                       selectTextOnFocus
                     />
                     <TextInput
-                      style={[styles.editInput, { flex: 1 }]}
+                      style={[styles.editInput, { flex: 1, minWidth: 0 }]}
                       value={s.reps}
                       onChangeText={(v) => setEditModal((prev) => prev ? {
                         ...prev, sets: prev.sets.map((x, xi) => xi === i ? { ...x, reps: v } : x),
@@ -319,7 +319,7 @@ export default function WorkoutDetailScreen() {
                       placeholderTextColor={theme.colors.textMuted}
                       selectTextOnFocus
                     />
-                  </>
+                  </View>
                 )}
               </View>
             ))}
@@ -528,7 +528,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.md, padding: 12, fontSize: 16, color: theme.colors.text, marginBottom: 10 },
   exList: { fontSize: 13, color: theme.colors.textMuted, lineHeight: 20 },
   // Edit sets
-  editSetHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingHorizontal: 2, gap: 8 },
+  editSetHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
   editCell: { fontSize: 11, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
   editSetRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   editSetNum: { width: 32, fontSize: 14, fontWeight: '600', color: theme.colors.textSecondary, textAlign: 'center' },

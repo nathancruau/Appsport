@@ -1,6 +1,6 @@
 {
   "name": "appsport",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "main": "expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
