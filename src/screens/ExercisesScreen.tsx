@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  SectionList, Modal, Alert, KeyboardAvoidingView, Platform,
+  SectionList, Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -9,10 +9,12 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
 import { Exercise, RootStackParamList } from '../types';
-import { getAllExercises, createExercise } from '../database/database';
+import { getAllExercises, createExercise, deleteExercise } from '../database/database';
 import { muscleGroupLabel } from '../utils/calculations';
 
 const MUSCLE_GROUPS = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core', 'cardio', 'other'];
+
+type AlertBtn = { text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void };
 
 export default function ExercisesScreen() {
   const insets = useSafeAreaInsets();
@@ -23,6 +25,7 @@ export default function ExercisesScreen() {
   const [newName, setNewName] = useState('');
   const [newMuscle, setNewMuscle] = useState('chest');
   const [newTracking, setNewTracking] = useState<'weight' | 'time'>('weight');
+  const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -31,6 +34,10 @@ export default function ExercisesScreen() {
       return () => { active = false; };
     }, [])
   );
+
+  const showAlert = (title: string, message: string, buttons: AlertBtn[] = [{ text: 'OK' }]) => {
+    setAlertModal({ title, message, buttons });
+  };
 
   const filtered = exercises.filter(
     (e) =>
@@ -45,9 +52,9 @@ export default function ExercisesScreen() {
 
   const handleAdd = async () => {
     const name = newName.trim();
-    if (!name) { Alert.alert('Nom requis'); return; }
+    if (!name) { showAlert('Nom requis', 'Saisis un nom pour l\'exercice.'); return; }
     if (exercises.some((e) => e.name.toLowerCase() === name.toLowerCase())) {
-      Alert.alert('Exercice déjà existant');
+      showAlert('Exercice déjà existant', `"${name}" est déjà dans la liste.`);
       return;
     }
     await createExercise(name, newMuscle, 'strength', newTracking);
@@ -57,6 +64,17 @@ export default function ExercisesScreen() {
     setNewName('');
     setNewMuscle('chest');
     setNewTracking('weight');
+  };
+
+  const confirmDeleteExercise = (ex: Exercise) => {
+    showAlert('Supprimer l\'exercice ?', `"${ex.name}" sera supprimé définitivement.`, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: async () => {
+        await deleteExercise(ex.id);
+        const updated = await getAllExercises();
+        setExercises(updated);
+      }},
+    ]);
   };
 
   return (
@@ -95,23 +113,37 @@ export default function ExercisesScreen() {
           </View>
         )}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => navigation.navigate('ExerciseDetail', { exerciseId: item.id, exerciseName: item.name })}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.rowName}>{item.name}</Text>
-            <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
-          </TouchableOpacity>
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={styles.rowMain}
+              onPress={() => navigation.navigate('ExerciseDetail', { exerciseId: item.id, exerciseName: item.name })}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.rowName}>{item.name}</Text>
+              {item.trackingType === 'time' && (
+                <Ionicons name="timer-outline" size={14} color={theme.colors.textMuted} style={{ marginRight: 4 }} />
+              )}
+              <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
+            </TouchableOpacity>
+            {!item.isDefault && (
+              <TouchableOpacity
+                onPress={() => confirmDeleteExercise(item)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.deleteBtn}
+              >
+                <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
+              </TouchableOpacity>
+            )}
+          </View>
         )}
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled
       />
 
-      {/* Add exercise modal */}
-      <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet">
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
+      {/* Add exercise overlay (replaces Modal for web compat) */}
+      {showAdd && (
+        <View style={[StyleSheet.absoluteFillObject, styles.overlay, { paddingTop: Math.max(insets.top, 16) }]}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => { setShowAdd(false); setNewName(''); }}>
               <Text style={styles.cancelText}>Annuler</Text>
@@ -173,82 +205,79 @@ export default function ExercisesScreen() {
               ))}
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        </View>
+      )}
+
+      {/* Custom alert */}
+      {alertModal && (
+        <Modal visible={true} transparent animationType="fade">
+          <View style={styles.alertOverlay}>
+            <View style={styles.alertBox}>
+              <Text style={styles.alertTitle}>{alertModal.title}</Text>
+              {!!alertModal.message && <Text style={styles.alertMessage}>{alertModal.message}</Text>}
+              <View style={[styles.alertButtons, alertModal.buttons.length > 1 && { flexDirection: 'row' }]}>
+                {alertModal.buttons.map((btn, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={[styles.alertBtn, alertModal.buttons.length > 1 && { flex: 1 }, btn.style === 'destructive' && styles.alertBtnDestructive]}
+                    onPress={() => { setAlertModal(null); btn.onPress?.(); }}
+                  >
+                    <Text style={[styles.alertBtnText, btn.style === 'destructive' && { color: theme.colors.error }]}>
+                      {btn.text}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.md,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: theme.spacing.md, marginBottom: theme.spacing.md,
   },
   pageTitle: { fontSize: 26, fontWeight: '700', color: theme.colors.text },
   addBtn: {
-    backgroundColor: theme.colors.primary,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: theme.colors.primary, width: 36, height: 36,
+    borderRadius: 18, alignItems: 'center', justifyContent: 'center',
   },
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: theme.spacing.md, marginBottom: theme.spacing.sm,
     backgroundColor: theme.colors.inputBackground,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: theme.radius.md, paddingHorizontal: 12, paddingVertical: 10,
   },
   searchInput: { flex: 1, fontSize: 15, color: theme.colors.text },
   sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: theme.colors.background,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: theme.colors.background, paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   dot: { width: 8, height: 8, borderRadius: 4 },
   sectionTitle: { flex: 1, fontSize: 13, fontWeight: '700', color: theme.colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
   sectionCount: { fontSize: 12, color: theme.colors.textMuted },
   row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    flexDirection: 'row', alignItems: 'center',
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
-  rowName: { fontSize: 15, color: theme.colors.text },
-  // Modal
-  modal: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    paddingTop: 16,
+  rowMain: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: theme.spacing.md, paddingVertical: 14, gap: 6,
   },
+  rowName: { flex: 1, fontSize: 15, color: theme.colors.text },
+  deleteBtn: { paddingHorizontal: theme.spacing.md, paddingVertical: 14 },
+  // Overlay
+  overlay: { backgroundColor: theme.colors.background, zIndex: 100 },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: theme.spacing.md, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   modalTitle: { fontSize: 17, fontWeight: '600', color: theme.colors.text },
   cancelText: { fontSize: 16, color: theme.colors.textSecondary },
@@ -256,21 +285,23 @@ const styles = StyleSheet.create({
   formGroup: { padding: theme.spacing.md },
   label: { fontSize: 13, fontWeight: '600', color: theme.colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
   input: {
-    backgroundColor: theme.colors.inputBackground,
-    borderRadius: theme.radius.md,
-    padding: 12,
-    fontSize: 16,
-    color: theme.colors.text,
+    backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.md,
+    padding: 12, fontSize: 16, color: theme.colors.text,
   },
   muscleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   muscleChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: theme.colors.card, borderRadius: theme.radius.full,
+    paddingHorizontal: 12, paddingVertical: 8,
   },
   muscleChipText: { fontSize: 13, color: theme.colors.text },
+  // Alert
+  alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 32 },
+  alertBox: { backgroundColor: theme.colors.card, borderRadius: theme.radius.lg, padding: 20, width: '100%', maxWidth: 340 },
+  alertTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text, textAlign: 'center', marginBottom: 6 },
+  alertMessage: { fontSize: 14, color: theme.colors.textSecondary, textAlign: 'center', marginBottom: 16, lineHeight: 20 },
+  alertButtons: { gap: 8 },
+  alertBtn: { paddingVertical: 12, borderRadius: theme.radius.md, backgroundColor: theme.colors.inputBackground, alignItems: 'center' },
+  alertBtnDestructive: { backgroundColor: '#FFF0F0' },
+  alertBtnText: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
 });

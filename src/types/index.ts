@@ -4,6 +4,7 @@ export interface Exercise {
   muscleGroup: string;
   exerciseType: 'strength' | 'cardio' | 'bodyweight';
   trackingType?: 'weight' | 'time';
+  isDefault?: boolean;
   createdAt: string;
 }
 

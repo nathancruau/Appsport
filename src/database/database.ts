@@ -101,17 +101,20 @@ export async function initDB(): Promise<void> {
       muscleGroup,
       exerciseType,
       trackingType: trackingType as 'weight' | 'time',
+      isDefault: true,
       createdAt: new Date().toISOString(),
     }));
     await setJSON(KEY_EXERCISES, seeded);
     _nextId = Math.max(_nextId, SEED.length + 1);
   } else {
-    // Migration: add trackingType to existing exercises
-    const needsMigration = exercises.some((e) => !e.trackingType);
-    if (needsMigration) {
+    const needsTrackingType = exercises.some((e) => !e.trackingType);
+    const needsTimeFix = exercises.some((e) => TIME_BASED_NAMES.includes(e.name) && e.trackingType !== 'time');
+    const needsIsDefault = exercises.some((e) => e.isDefault === undefined);
+    if (needsTrackingType || needsTimeFix || needsIsDefault) {
       await setJSON(KEY_EXERCISES, exercises.map((e) => ({
         ...e,
-        trackingType: e.trackingType ?? (TIME_BASED_NAMES.includes(e.name) ? 'time' : 'weight'),
+        isDefault: e.isDefault ?? (e.id <= SEED.length),
+        trackingType: TIME_BASED_NAMES.includes(e.name) ? 'time' : (e.trackingType ?? 'weight'),
       })));
     }
   }
@@ -131,10 +134,16 @@ export async function createExercise(name: string, muscleGroup: string, exercise
     muscleGroup,
     exerciseType: exerciseType as Exercise['exerciseType'],
     trackingType,
+    isDefault: false,
     createdAt: new Date().toISOString(),
   };
   await setJSON(KEY_EXERCISES, [...exercises, exercise]);
   return exercise;
+}
+
+export async function deleteExercise(id: number): Promise<void> {
+  const exercises = await getAllExercises();
+  await setJSON(KEY_EXERCISES, exercises.filter((e) => e.id !== id));
 }
 
 // ─── Save workout ─────────────────────────────────────────────────────────────
