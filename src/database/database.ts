@@ -364,6 +364,29 @@ export async function deleteWorkout(workoutId: number): Promise<void> {
   await setJSON(KEY_WORKOUTS, workouts.filter((w) => w.id !== workoutId));
 }
 
+export async function updateWorkoutSets(
+  workoutId: number,
+  exerciseId: number,
+  sets: { id: number; weight: number | null; reps: number | null }[]
+): Promise<void> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const wIdx = workouts.findIndex((w) => w.id === workoutId);
+  if (wIdx === -1) return;
+  const w = { ...workouts[wIdx] };
+  w.exercises = w.exercises.map((ex) => {
+    if (ex.exerciseId !== exerciseId) return ex;
+    return {
+      ...ex,
+      sets: ex.sets.map((s) => {
+        const upd = sets.find((u) => u.id === s.id);
+        return upd ? { ...s, weight: upd.weight, reps: upd.reps } : s;
+      }),
+    };
+  });
+  workouts[wIdx] = w;
+  await setJSON(KEY_WORKOUTS, workouts);
+}
+
 // ─── Rest timer settings ───────────────────────────────────────────────────────
 
 export interface RestTimerSettings {
