@@ -3,6 +3,7 @@ export interface Exercise {
   name: string;
   muscleGroup: string;
   exerciseType: 'strength' | 'cardio' | 'bodyweight';
+  trackingType?: 'weight' | 'time';
   createdAt: string;
 }
 
@@ -48,6 +49,7 @@ export interface PersonalRecord {
 export interface ActiveSet {
   reps: string;
   weight: string;
+  duration: string;
   isWarmup: boolean;
   completed: boolean;
   rpe: string;

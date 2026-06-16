@@ -29,7 +29,7 @@ export default function WorkoutDetailScreen() {
   const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
   const [editModal, setEditModal] = useState<{
     ex: WorkoutExerciseDetail;
-    sets: { id: number; weight: string; reps: string }[];
+    sets: { id: number; weight: string; reps: string; duration: string }[];
   } | null>(null);
 
   const load = async () => {
@@ -73,6 +73,7 @@ export default function WorkoutDetailScreen() {
           id: s.id,
           weight: s.weight != null ? String(s.weight) : '',
           reps: s.reps != null ? String(s.reps) : '',
+          duration: s.duration != null ? String(s.duration) : '',
         })),
     });
   };
@@ -86,6 +87,7 @@ export default function WorkoutDetailScreen() {
         id: s.id,
         weight: s.weight ? Number(s.weight) : null,
         reps: s.reps ? Number(s.reps) : null,
+        duration: s.duration ? Number(s.duration) : null,
       }))
     );
     await load();
@@ -171,14 +173,26 @@ export default function WorkoutDetailScreen() {
 
               <View style={styles.setHeader}>
                 <Text style={[styles.setCell, { width: 28 }]}>#</Text>
-                <Text style={[styles.setCell, { flex: 1 }]}>Poids</Text>
-                <Text style={[styles.setCell, { flex: 1 }]}>Reps</Text>
+                {ex.trackingType === 'time' ? (
+                  <Text style={[styles.setCell, { flex: 1 }]}>Durée</Text>
+                ) : (
+                  <>
+                    <Text style={[styles.setCell, { flex: 1 }]}>Poids</Text>
+                    <Text style={[styles.setCell, { flex: 1 }]}>Reps</Text>
+                  </>
+                )}
               </View>
               {ex.sets.map((s, i) => (
                 <View key={s.id} style={[styles.setRow, s.isWarmup && styles.setWarmup]}>
                   <Text style={styles.setNum}>{s.isWarmup ? 'E' : i + 1 - warmupSets.filter((_, wi) => wi < i).length}</Text>
-                  <Text style={styles.setValue}>{s.weight != null ? `${formatWeight(s.weight)} kg` : '—'}</Text>
-                  <Text style={styles.setValue}>{s.reps ?? '—'}</Text>
+                  {ex.trackingType === 'time' ? (
+                    <Text style={[styles.setValue, { flex: 2 }]}>{s.duration != null ? `${s.duration}s` : '—'}</Text>
+                  ) : (
+                    <>
+                      <Text style={styles.setValue}>{s.weight != null ? `${formatWeight(s.weight)} kg` : '—'}</Text>
+                      <Text style={styles.setValue}>{s.reps ?? '—'}</Text>
+                    </>
+                  )}
                 </View>
               ))}
             </View>
@@ -205,36 +219,59 @@ export default function WorkoutDetailScreen() {
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: theme.spacing.md }}>
               <View style={styles.editSetHeader}>
                 <Text style={[styles.editCell, { width: 32 }]}>#</Text>
-                <Text style={[styles.editCell, { flex: 1 }]}>Poids (kg)</Text>
-                <Text style={[styles.editCell, { flex: 1 }]}>Reps</Text>
+                {editModal.ex.trackingType === 'time' ? (
+                  <Text style={[styles.editCell, { flex: 1 }]}>Durée (s)</Text>
+                ) : (
+                  <>
+                    <Text style={[styles.editCell, { flex: 1 }]}>Poids (kg)</Text>
+                    <Text style={[styles.editCell, { flex: 1 }]}>Reps</Text>
+                  </>
+                )}
               </View>
               {editModal.sets.map((s, i) => (
                 <View key={s.id} style={styles.editSetRow}>
                   <Text style={styles.editSetNum}>{i + 1}</Text>
-                  <TextInput
-                    style={[styles.editInput, { flex: 1 }]}
-                    value={s.weight}
-                    onChangeText={(v) => setEditModal((prev) => prev ? {
-                      ...prev,
-                      sets: prev.sets.map((x, xi) => xi === i ? { ...x, weight: v } : x),
-                    } : null)}
-                    keyboardType="decimal-pad"
-                    placeholder="—"
-                    placeholderTextColor={theme.colors.textMuted}
-                    selectTextOnFocus
-                  />
-                  <TextInput
-                    style={[styles.editInput, { flex: 1 }]}
-                    value={s.reps}
-                    onChangeText={(v) => setEditModal((prev) => prev ? {
-                      ...prev,
-                      sets: prev.sets.map((x, xi) => xi === i ? { ...x, reps: v } : x),
-                    } : null)}
-                    keyboardType="number-pad"
-                    placeholder="—"
-                    placeholderTextColor={theme.colors.textMuted}
-                    selectTextOnFocus
-                  />
+                  {editModal!.ex.trackingType === 'time' ? (
+                    <TextInput
+                      style={[styles.editInput, { flex: 1 }]}
+                      value={s.duration}
+                      onChangeText={(v) => setEditModal((prev) => prev ? {
+                        ...prev,
+                        sets: prev.sets.map((x, xi) => xi === i ? { ...x, duration: v } : x),
+                      } : null)}
+                      keyboardType="number-pad"
+                      placeholder="—"
+                      placeholderTextColor={theme.colors.textMuted}
+                      selectTextOnFocus
+                    />
+                  ) : (
+                    <>
+                      <TextInput
+                        style={[styles.editInput, { flex: 1 }]}
+                        value={s.weight}
+                        onChangeText={(v) => setEditModal((prev) => prev ? {
+                          ...prev,
+                          sets: prev.sets.map((x, xi) => xi === i ? { ...x, weight: v } : x),
+                        } : null)}
+                        keyboardType="decimal-pad"
+                        placeholder="—"
+                        placeholderTextColor={theme.colors.textMuted}
+                        selectTextOnFocus
+                      />
+                      <TextInput
+                        style={[styles.editInput, { flex: 1 }]}
+                        value={s.reps}
+                        onChangeText={(v) => setEditModal((prev) => prev ? {
+                          ...prev,
+                          sets: prev.sets.map((x, xi) => xi === i ? { ...x, reps: v } : x),
+                        } : null)}
+                        keyboardType="number-pad"
+                        placeholder="—"
+                        placeholderTextColor={theme.colors.textMuted}
+                        selectTextOnFocus
+                      />
+                    </>
+                  )}
                 </View>
               ))}
             </ScrollView>

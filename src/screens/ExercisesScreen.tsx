@@ -22,6 +22,7 @@ export default function ExercisesScreen() {
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
   const [newMuscle, setNewMuscle] = useState('chest');
+  const [newTracking, setNewTracking] = useState<'weight' | 'time'>('weight');
 
   useFocusEffect(
     useCallback(() => {
@@ -49,12 +50,13 @@ export default function ExercisesScreen() {
       Alert.alert('Exercice déjà existant');
       return;
     }
-    await createExercise(name, newMuscle, 'strength');
+    await createExercise(name, newMuscle, 'strength', newTracking);
     const updated = await getAllExercises();
     setExercises(updated);
     setShowAdd(false);
     setNewName('');
     setNewMuscle('chest');
+    setNewTracking('weight');
   };
 
   return (
@@ -130,6 +132,28 @@ export default function ExercisesScreen() {
               onChangeText={setNewName}
               autoFocus
             />
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Type de suivi</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {(['weight', 'time'] as const).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.muscleChip, newTracking === t && { backgroundColor: theme.colors.primary }]}
+                  onPress={() => setNewTracking(t)}
+                >
+                  <Ionicons
+                    name={t === 'weight' ? 'barbell-outline' : 'timer-outline'}
+                    size={14}
+                    color={newTracking === t ? '#fff' : theme.colors.text}
+                  />
+                  <Text style={[styles.muscleChipText, newTracking === t && { color: '#fff' }]}>
+                    {t === 'weight' ? 'Poids / reps' : 'Temps (s)'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
           <View style={styles.formGroup}>

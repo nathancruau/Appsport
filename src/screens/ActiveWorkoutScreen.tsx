@@ -35,7 +35,7 @@ type Action =
   | { type: 'ADD_SET'; ei: number }
   | { type: 'DUPLICATE_SET'; ei: number }
   | { type: 'REMOVE_SET'; ei: number; si: number }
-  | { type: 'UPDATE_SET'; ei: number; si: number; field: 'reps' | 'weight'; value: string }
+  | { type: 'UPDATE_SET'; ei: number; si: number; field: 'reps' | 'weight' | 'duration'; value: string }
   | { type: 'UPDATE_RPE'; ei: number; si: number; value: string }
   | { type: 'TOGGLE_COMPLETE'; ei: number; si: number }
   | { type: 'MOVE_EXERCISE'; index: number; direction: 'up' | 'down' }
@@ -55,6 +55,7 @@ function makeEmptySet(prev?: WorkoutSet): ActiveSet {
   return {
     reps: prev?.reps != null ? String(prev.reps) : '',
     weight: prev?.weight != null ? String(prev.weight) : '',
+    duration: prev?.duration != null ? String(prev.duration) : '',
     isWarmup: false,
     completed: false,
     rpe: '',
@@ -79,7 +80,7 @@ function reducer(state: State, action: Action): State {
       const exs = [...state.exercises];
       const ex = { ...exs[action.ei] };
       const last = ex.sets[ex.sets.length - 1];
-      ex.sets = [...ex.sets, makeEmptySet({ reps: last ? Number(last.reps) || null : null, weight: last ? Number(last.weight) || null : null } as any)];
+      ex.sets = [...ex.sets, makeEmptySet(last ? { reps: Number(last.reps) || null, weight: Number(last.weight) || null, duration: Number(last.duration) || null } as any : undefined)];
       exs[action.ei] = ex;
       return { ...state, exercises: exs };
     }
@@ -319,10 +320,12 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     dispatch({ type: 'TOGGLE_COMPLETE', ei, si });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (completing) {
-      const w = Number(set.weight), r = Number(set.reps);
-      if (w > 0 && r > 0) {
-        const newORM = estimateOneRM(w, r);
-        if (!ae.bestSet || newORM > ae.bestSet.oneRM) showPRBanner(ae.exercise.name);
+      if (ae.exercise.trackingType !== 'time') {
+        const w = Number(set.weight), r = Number(set.reps);
+        if (w > 0 && r > 0) {
+          const newORM = estimateOneRM(w, r);
+          if (!ae.bestSet || newORM > ae.bestSet.oneRM) showPRBanner(ae.exercise.name);
+        }
       }
       const nextIsSuperset = state.exercises[ei + 1]?.isSuperset;
       if (restSettings.enabled && !nextIsSuperset) startRestTimer(restSettings.durationSeconds);
@@ -354,8 +357,9 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
               exercises: state.exercises.map((ae) => ({
                 exerciseId: ae.exercise.id,
                 sets: ae.sets.map((s) => ({
-                  reps: s.reps ? Number(s.reps) : null,
-                  weight: s.weight ? Number(s.weight) : null,
+                  reps: ae.exercise.trackingType === 'time' ? null : (s.reps ? Number(s.reps) : null),
+                  weight: ae.exercise.trackingType === 'time' ? null : (s.weight ? Number(s.weight) : null),
+                  duration: ae.exercise.trackingType === 'time' ? (s.duration ? Number(s.duration) : null) : null,
                   isWarmup: s.isWarmup,
                   completed: s.completed,
                   rpe: s.rpe ? Number(s.rpe) : null,
@@ -760,7 +764,7 @@ function ExerciseBlock({
   onAddSet: () => void;
   onDuplicateSet: () => void;
   onRemoveSet: (si: number) => void;
-  onUpdateSet: (si: number, field: 'reps' | 'weight', value: string) => void;
+  onUpdateSet: (si: number, field: 'reps' | 'weight' | 'duration', value: string) => void;
   onUpdateRPE: (si: number, value: string) => void;
   onToggleComplete: (si: number) => void;
   onRemoveExercise: () => void;
@@ -830,7 +834,7 @@ function ExerciseBlock({
         </View>
       )}
 
-      {ae.bestSet && (
+      {ae.bestSet && ae.exercise.trackingType !== 'time' && (
         <Text style={styles.bestLabel}>
           Record : {ae.bestSet.weight} kg × {ae.bestSet.reps} reps · 1RM ≈ {ae.bestSet.oneRM} kg
         </Text>
@@ -839,8 +843,14 @@ function ExerciseBlock({
       <View style={styles.setHeader}>
         <Text style={[styles.setCell, { width: 28 }]}>#</Text>
         <Text style={[styles.setCell, { flex: 1 }]}>Précédent</Text>
-        <Text style={[styles.setCell, { width: 72, textAlign: 'center' }]}>kg</Text>
-        <Text style={[styles.setCell, { width: 60, textAlign: 'center' }]}>Reps</Text>
+        {ae.exercise.trackingType === 'time' ? (
+          <Text style={[styles.setCell, { flex: 1, textAlign: 'center' }]}>Durée (s)</Text>
+        ) : (
+          <>
+            <Text style={[styles.setCell, { width: 72, textAlign: 'center' }]}>kg</Text>
+            <Text style={[styles.setCell, { width: 60, textAlign: 'center' }]}>Reps</Text>
+          </>
+        )}
         <Text style={[styles.setCell, { width: 36 }]}> </Text>
       </View>
 
@@ -851,25 +861,43 @@ function ExerciseBlock({
             <SwipeableRow onDelete={() => onRemoveSet(si)}>
               <View style={[styles.setRow, s.completed && styles.setRowDone]}>
                 <Text style={[styles.setNum, s.completed && styles.setNumDone]}>{si + 1}</Text>
-                <Text style={styles.setPrev}>{prev ? `${prev.weight}×${prev.reps}` : '—'}</Text>
-                <TextInput
-                  style={[styles.setInput, { width: 72 }]}
-                  value={s.weight}
-                  onChangeText={(v) => onUpdateSet(si, 'weight', v)}
-                  keyboardType="decimal-pad"
-                  placeholder="0"
-                  placeholderTextColor={theme.colors.textMuted}
-                  selectTextOnFocus
-                />
-                <TextInput
-                  style={[styles.setInput, { width: 60 }]}
-                  value={s.reps}
-                  onChangeText={(v) => onUpdateSet(si, 'reps', v)}
-                  keyboardType="number-pad"
-                  placeholder="0"
-                  placeholderTextColor={theme.colors.textMuted}
-                  selectTextOnFocus
-                />
+                <Text style={styles.setPrev}>
+                  {ae.exercise.trackingType === 'time'
+                    ? (prev?.duration != null ? `${prev.duration}s` : '—')
+                    : (prev ? `${prev.weight}×${prev.reps}` : '—')}
+                </Text>
+                {ae.exercise.trackingType === 'time' ? (
+                  <TextInput
+                    style={[styles.setInput, { flex: 1 }]}
+                    value={s.duration}
+                    onChangeText={(v) => onUpdateSet(si, 'duration', v)}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.textMuted}
+                    selectTextOnFocus
+                  />
+                ) : (
+                  <>
+                    <TextInput
+                      style={[styles.setInput, { width: 72 }]}
+                      value={s.weight}
+                      onChangeText={(v) => onUpdateSet(si, 'weight', v)}
+                      keyboardType="decimal-pad"
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                      selectTextOnFocus
+                    />
+                    <TextInput
+                      style={[styles.setInput, { width: 60 }]}
+                      value={s.reps}
+                      onChangeText={(v) => onUpdateSet(si, 'reps', v)}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                      selectTextOnFocus
+                    />
+                  </>
+                )}
                 <TouchableOpacity onPress={() => onToggleComplete(si)} style={[styles.checkBtn, s.completed && styles.checkBtnDone]}>
                   <Ionicons name={s.completed ? 'checkmark' : 'ellipse-outline'} size={18} color={s.completed ? '#fff' : theme.colors.textMuted} />
                 </TouchableOpacity>
