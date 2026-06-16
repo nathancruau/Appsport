@@ -120,8 +120,8 @@ export default function HomeScreen({ navigation }: Props) {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={{ marginBottom: theme.spacing.md }}
-            contentContainerStyle={{ gap: 8, paddingRight: 16 }}
+            style={{ marginBottom: theme.spacing.md, maxHeight: 28 }}
+            contentContainerStyle={{ gap: 6, paddingRight: 16, alignItems: 'center' }}
           >
             {templates.map((t) => (
               <View key={t.id} style={styles.templateChip}>
@@ -130,14 +130,14 @@ export default function HomeScreen({ navigation }: Props) {
                   onPress={() => navigation.navigate('ActiveWorkout', { templateExerciseIds: t.exerciseIds })}
                   activeOpacity={0.75}
                 >
-                  <Ionicons name="flash" size={13} color={theme.colors.primary} />
+                  <Ionicons name="flash" size={11} color={theme.colors.primary} />
                   <Text style={styles.templateChipText}>{t.name}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => confirmDeleteTemplate(t)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
                 >
-                  <Ionicons name="close" size={14} color={theme.colors.textMuted} />
+                  <Ionicons name="close" size={12} color={theme.colors.textMuted} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -214,11 +214,11 @@ const styles = StyleSheet.create({
   templateChip: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: theme.colors.card, borderRadius: theme.radius.full,
-    paddingLeft: 8, paddingRight: 6, paddingVertical: 4,
-    borderWidth: 1, borderColor: theme.colors.border, gap: 4,
+    paddingLeft: 7, paddingRight: 5, paddingVertical: 3,
+    borderWidth: 1, borderColor: theme.colors.border, gap: 3,
   },
-  templateChipMain: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingRight: 2 },
-  templateChipText: { fontSize: 12, fontWeight: '600', color: theme.colors.text },
+  templateChipMain: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingRight: 2 },
+  templateChipText: { fontSize: 11, fontWeight: '600', color: theme.colors.text },
   // Cards
   card: { backgroundColor: theme.colors.card, borderRadius: theme.radius.md, padding: theme.spacing.md, marginBottom: theme.spacing.sm },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
