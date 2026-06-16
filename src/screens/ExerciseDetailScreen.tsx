@@ -36,10 +36,10 @@ export default function ExerciseDetailScreen() {
 
   if (loading) return <ActivityIndicator color={theme.colors.primary} style={{ flex: 1, backgroundColor: theme.colors.background }} />;
 
-  const recent = [...history].reverse().slice(0, 12);
+  const recent = history.slice(0, 12).reverse(); // 12 plus récentes, ordre chronologique (gauche=ancien, droite=récent)
   const pr = history.length > 0 ? Math.max(...history.map((h) => h.estimatedOneRM)) : 0;
   const bestWeight = history.length > 0 ? Math.max(...history.map((h) => h.bestWeight)) : 0;
-  const lastEntry = history[history.length - 1];
+  const lastEntry = history[0]; // plus récente (history est newest-first)
 
   const chartData = recent.length >= 2 ? {
     labels: recent.map((h) => {
