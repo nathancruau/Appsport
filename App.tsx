@@ -51,30 +51,43 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 }
 import { initDB } from './src/database/database';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { theme } from './src/theme';
 
-export default function App() {
-  const [ready, setReady] = useState(false);
+function LoadingView() {
+  return (
+    <SafeAreaProvider>
+      <View style={{ flex: 1, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color={theme.colors.primary} size="large" />
+      </View>
+    </SafeAreaProvider>
+  );
+}
 
-  useEffect(() => {
-    initDB().then(() => setReady(true)).catch(console.error);
-  }, []);
-
-  if (!ready) {
-    return (
-      <SafeAreaProvider>
-        <View style={{ flex: 1, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator color={theme.colors.primary} size="large" />
-        </View>
-      </SafeAreaProvider>
-    );
-  }
-
+function AppReady() {
+  const { loading } = useAuth();
+  if (loading) return <LoadingView />;
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <AppNavigator />
     </SafeAreaProvider>
+  );
+}
+
+export default function App() {
+  const [dbReady, setDbReady] = useState(false);
+
+  useEffect(() => {
+    initDB().then(() => setDbReady(true)).catch(console.error);
+  }, []);
+
+  if (!dbReady) return <LoadingView />;
+
+  return (
+    <AuthProvider>
+      <AppReady />
+    </AuthProvider>
   );
 }

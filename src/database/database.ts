@@ -1,4 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Exercise, Workout, WorkoutSet, PersonalRecord, WorkoutTemplate, BestSet } from '../types';
 import { estimateOneRM } from '../utils/calculations';
 
@@ -6,6 +8,36 @@ import { estimateOneRM } from '../utils/calculations';
 
 let _nextId = Date.now();
 function nextId(): number { return ++_nextId; }
+
+// ─── Cloud sync ───────────────────────────────────────────────────────────────
+
+let _cloudUid: string | null = null;
+
+export function setCloudUser(uid: string | null): void {
+  _cloudUid = uid;
+}
+
+async function pushKeyToCloud(key: string, serialized: string): Promise<void> {
+  if (!_cloudUid) return;
+  await setDoc(doc(db, 'users', _cloudUid, 'storage', key), { data: serialized });
+}
+
+export async function loadFromCloud(uid: string): Promise<void> {
+  const keys = [KEY_EXERCISES, KEY_WORKOUTS, KEY_TEMPLATES, KEY_REST_TIMER];
+  await Promise.all(keys.map(async (key) => {
+    try {
+      const snap = await getDoc(doc(db, 'users', uid, 'storage', key));
+      if (snap.exists()) {
+        await AsyncStorage.setItem(key, (snap.data() as { data: string }).data);
+      } else {
+        const local = await AsyncStorage.getItem(key);
+        if (local) {
+          await setDoc(doc(db, 'users', uid, 'storage', key), { data: local });
+        }
+      }
+    } catch { /* offline or network error: keep local data */ }
+  }));
+}
 
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -26,7 +58,11 @@ async function getJSON<T>(key: string, fallback: T): Promise<T> {
 }
 
 async function setJSON<T>(key: string, value: T): Promise<void> {
-  await AsyncStorage.setItem(key, JSON.stringify(value));
+  const serialized = JSON.stringify(value);
+  await AsyncStorage.setItem(key, serialized);
+  if (_cloudUid) {
+    pushKeyToCloud(key, serialized).catch(console.error);
+  }
 }
 
 // ─── Internal types ───────────────────────────────────────────────────────────

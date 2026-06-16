@@ -1,10 +1,9 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  StatusBar, ActivityIndicator, ScrollView, Modal, Platform,
+  StatusBar, ActivityIndicator, ScrollView, Modal, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { version } from '../../package.json';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +11,7 @@ import { theme } from '../theme';
 import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
 import { getRecentWorkouts, getTemplates, deleteTemplate } from '../database/database';
 import { formatDate, formatDuration } from '../utils/calculations';
+import { useAuth } from '../context/AuthContext';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList> };
 type WorkoutItem = Workout & { exerciseCount: number; totalVolume: number };
@@ -19,6 +19,7 @@ type AlertBtn = { text: string; style?: 'default' | 'cancel' | 'destructive'; on
 
 export default function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const { user, signInWithGoogle, signOut } = useAuth();
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [templates, setTemplates] = useState<WorkoutTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,15 +95,43 @@ export default function HomeScreen({ navigation }: Props) {
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Bonjour 💪</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.greeting}>
+            {user ? `Bonjour ${user.displayName?.split(' ')[0] ?? ''} 💪` : 'Bonjour 💪'}
+          </Text>
           <Text style={styles.subtitle}>
             {thisWeekCount > 0
               ? `${thisWeekCount} séance${thisWeekCount > 1 ? 's' : ''} cette semaine`
               : 'Prêt pour une séance ?'}
           </Text>
         </View>
-        <Text style={styles.versionText}>v{version}</Text>
+        {user ? (
+          <TouchableOpacity
+            style={styles.avatarBtn}
+            onPress={() => showAlert(
+              user.displayName ?? 'Compte',
+              user.email ?? '',
+              [
+                { text: 'Déconnexion', style: 'destructive', onPress: signOut },
+                { text: 'Fermer', style: 'cancel' },
+              ]
+            )}
+          >
+            {user.photoURL ? (
+              <Image source={{ uri: user.photoURL }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarFallback]}>
+                <Text style={styles.avatarInitial}>{(user.displayName ?? user.email ?? '?')[0].toUpperCase()}</Text>
+              </View>
+            )}
+            <View style={styles.syncDot} />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.signInBtn} onPress={signInWithGoogle}>
+            <Ionicons name="logo-google" size={13} color={theme.colors.primary} />
+            <Text style={styles.signInText}>Connexion</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <TouchableOpacity
@@ -197,9 +226,20 @@ export default function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background, paddingHorizontal: theme.spacing.md },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: theme.spacing.sm },
-  versionText: { fontSize: 11, color: theme.colors.textMuted, marginTop: 4 },
   greeting: { fontSize: 26, fontWeight: '700', color: theme.colors.text },
   subtitle: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 2 },
+  avatarBtn: { position: 'relative', marginTop: 4 },
+  avatar: { width: 36, height: 36, borderRadius: 18 },
+  avatarFallback: { backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  syncDot: { position: 'absolute', bottom: 0, right: 0, width: 10, height: 10, borderRadius: 5, backgroundColor: '#34C759', borderWidth: 1.5, borderColor: theme.colors.background },
+  signInBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: theme.radius.full, borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: theme.colors.card,
+  },
+  signInText: { fontSize: 13, fontWeight: '600', color: theme.colors.primary },
   startButton: {
     backgroundColor: theme.colors.primary, borderRadius: theme.radius.lg,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
