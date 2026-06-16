@@ -234,10 +234,10 @@ const styles = StyleSheet.create({
   stat: { alignItems: 'center', gap: 4 },
   statValue: { fontSize: 18, fontWeight: '700', color: theme.colors.text },
   statLabel: { fontSize: 11, color: theme.colors.textMuted, textTransform: 'uppercase' },
-  actions: { flexDirection: 'row', gap: 8 },
+  actions: { gap: 8 },
   actionBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: theme.radius.md,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 11, borderRadius: theme.radius.md,
     backgroundColor: theme.colors.inputBackground, borderWidth: 1, borderColor: theme.colors.border,
   },
   actionBtnDanger: { backgroundColor: '#FFF0F0', borderColor: theme.colors.error + '40' },
