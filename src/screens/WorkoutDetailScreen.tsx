@@ -182,10 +182,10 @@ export default function WorkoutDetailScreen() {
 
       {/* Edit Sets Modal */}
       {editModal && (
-        <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
+        <Modal visible={true} animationType="slide" presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : 'fullScreen'}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}
+            style={[styles.modal, { paddingTop: Platform.OS === 'ios' ? 0 : 16 }]}
           >
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setEditModal(null)}>
@@ -238,8 +238,8 @@ export default function WorkoutDetailScreen() {
 
       {/* Save Template Modal */}
       {showSaveTemplate && (
-        <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
-          <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
+        <Modal visible={true} animationType="slide" presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : 'fullScreen'}>
+          <View style={[styles.modal, { paddingTop: Platform.OS === 'ios' ? 0 : 16 }]}>
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setShowSaveTemplate(false)}>
                 <Text style={styles.cancelText}>Annuler</Text>
@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
   setNum: { width: 28, fontSize: 13, color: theme.colors.textMuted, fontWeight: '600' },
   setValue: { flex: 1, fontSize: 14, color: theme.colors.text },
   // Edit modal
-  editSetHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingHorizontal: 2 },
+  editSetHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingHorizontal: 2, gap: 8 },
   editCell: { fontSize: 11, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
   editSetRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   editSetNum: { width: 32, fontSize: 14, fontWeight: '600', color: theme.colors.textSecondary, textAlign: 'center' },
