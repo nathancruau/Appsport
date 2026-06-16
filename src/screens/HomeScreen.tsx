@@ -214,11 +214,11 @@ const styles = StyleSheet.create({
   templateChip: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: theme.colors.card, borderRadius: theme.radius.full,
-    paddingLeft: 10, paddingRight: 8, paddingVertical: 7,
-    borderWidth: 1, borderColor: theme.colors.border, gap: 6,
+    paddingLeft: 8, paddingRight: 6, paddingVertical: 4,
+    borderWidth: 1, borderColor: theme.colors.border, gap: 4,
   },
-  templateChipMain: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4 },
-  templateChipText: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
+  templateChipMain: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingRight: 2 },
+  templateChipText: { fontSize: 12, fontWeight: '600', color: theme.colors.text },
   // Cards
   card: { backgroundColor: theme.colors.card, borderRadius: theme.radius.md, padding: theme.spacing.md, marginBottom: theme.spacing.sm },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
