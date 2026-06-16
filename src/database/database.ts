@@ -382,6 +382,65 @@ export async function deleteWorkout(workoutId: number): Promise<void> {
   await setJSON(KEY_WORKOUTS, workouts.filter((w) => w.id !== workoutId));
 }
 
+export async function addSetsToWorkoutExercise(
+  workoutId: number,
+  exerciseId: number,
+  newSets: { weight: number | null; reps: number | null; duration?: number | null }[]
+): Promise<void> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const wIdx = workouts.findIndex((w) => w.id === workoutId);
+  if (wIdx === -1) return;
+  const w = { ...workouts[wIdx] };
+  w.exercises = w.exercises.map((ex) => {
+    if (ex.exerciseId !== exerciseId) return ex;
+    const weId = ex.id;
+    const baseNum = ex.sets.length + 1;
+    return {
+      ...ex,
+      sets: [
+        ...ex.sets,
+        ...newSets.map((s, i) => ({
+          id: nextId(),
+          workoutExerciseId: weId,
+          setNumber: baseNum + i,
+          reps: s.reps,
+          weight: s.weight,
+          duration: s.duration ?? null,
+          isWarmup: false,
+          completed: true,
+          rpe: null,
+        })),
+      ],
+    };
+  });
+  workouts[wIdx] = w;
+  await setJSON(KEY_WORKOUTS, workouts);
+}
+
+export async function addExerciseToWorkout(workoutId: number, exerciseId: number): Promise<void> {
+  const [workouts, allExercises] = await Promise.all([
+    getJSON<StoredWorkout[]>(KEY_WORKOUTS, []),
+    getAllExercises(),
+  ]);
+  const wIdx = workouts.findIndex((w) => w.id === workoutId);
+  if (wIdx === -1) return;
+  const info = allExercises.find((e) => e.id === exerciseId);
+  if (!info) return;
+  const w = { ...workouts[wIdx] };
+  const weId = nextId();
+  w.exercises = [...w.exercises, {
+    id: weId,
+    exerciseId,
+    exerciseName: info.name,
+    muscleGroup: info.muscleGroup,
+    trackingType: info.trackingType ?? 'weight',
+    orderIndex: w.exercises.length,
+    sets: [],
+  }];
+  workouts[wIdx] = w;
+  await setJSON(KEY_WORKOUTS, workouts);
+}
+
 export async function renameWorkout(workoutId: number, name: string | null): Promise<void> {
   const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
   const idx = workouts.findIndex((w) => w.id === workoutId);
