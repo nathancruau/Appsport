@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  StatusBar, ActivityIndicator, ScrollView, Alert,
+  StatusBar, ActivityIndicator, ScrollView, Modal, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { version } from '../../package.json';
@@ -11,40 +11,47 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
 import { getRecentWorkouts, getTemplates, deleteTemplate } from '../database/database';
-import { formatDate, formatDuration, muscleGroupLabel } from '../utils/calculations';
+import { formatDate, formatDuration } from '../utils/calculations';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList> };
-
 type WorkoutItem = Workout & { exerciseCount: number; totalVolume: number };
+type AlertBtn = { text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void };
 
 export default function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [templates, setTemplates] = useState<WorkoutTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       setLoading(true);
-      Promise.all([
-        getRecentWorkouts(10),
-        getTemplates(),
-      ]).then(([data, tmpl]) => {
-        if (active) {
-          setWorkouts(data);
-          setTemplates(tmpl);
-          setLoading(false);
-        }
+      Promise.all([getRecentWorkouts(10), getTemplates()]).then(([data, tmpl]) => {
+        if (active) { setWorkouts(data); setTemplates(tmpl); setLoading(false); }
       });
       return () => { active = false; };
     }, [])
   );
 
+  const showAlert = (title: string, message: string, buttons: AlertBtn[]) => {
+    setAlertModal({ title, message, buttons });
+  };
+
+  const confirmDeleteTemplate = (t: WorkoutTemplate) => {
+    showAlert('Supprimer le template ?', `"${t.name}" sera supprimé.`, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: async () => {
+        await deleteTemplate(t.id);
+        setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+      }},
+    ]);
+  };
+
   const thisWeekCount = workouts.filter((w) => {
     const d = new Date(w.date);
-    const now = new Date();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+    const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
     return d >= weekAgo;
   }).length;
 
@@ -117,24 +124,22 @@ export default function HomeScreen({ navigation }: Props) {
             contentContainerStyle={{ gap: 8, paddingRight: 16 }}
           >
             {templates.map((t) => (
-              <TouchableOpacity
-                key={t.id}
-                style={styles.templateChip}
-                onPress={() => navigation.navigate('ActiveWorkout', { templateExerciseIds: t.exerciseIds })}
-                onLongPress={() => {
-                  Alert.alert('Supprimer le template ?', `"${t.name}" sera supprimé.`, [
-                    { text: 'Annuler', style: 'cancel' },
-                    { text: 'Supprimer', style: 'destructive', onPress: async () => {
-                      await deleteTemplate(t.id);
-                      setTemplates((prev) => prev.filter((x) => x.id !== t.id));
-                    }},
-                  ]);
-                }}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="flash" size={14} color={theme.colors.primary} />
-                <Text style={styles.templateChipText}>{t.name}</Text>
-              </TouchableOpacity>
+              <View key={t.id} style={styles.templateChip}>
+                <TouchableOpacity
+                  style={styles.templateChipMain}
+                  onPress={() => navigation.navigate('ActiveWorkout', { templateExerciseIds: t.exerciseIds })}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="flash" size={13} color={theme.colors.primary} />
+                  <Text style={styles.templateChipText}>{t.name}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => confirmDeleteTemplate(t)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                >
+                  <Ionicons name="close" size={14} color={theme.colors.textMuted} />
+                </TouchableOpacity>
+              </View>
             ))}
           </ScrollView>
         </>
@@ -160,130 +165,78 @@ export default function HomeScreen({ navigation }: Props) {
           />
         </>
       )}
+
+      {/* Custom alert (Alert.alert bloqué en PWA) */}
+      {alertModal && (
+        <Modal visible={true} transparent animationType="fade">
+          <View style={styles.alertOverlay}>
+            <View style={styles.alertBox}>
+              <Text style={styles.alertTitle}>{alertModal.title}</Text>
+              {!!alertModal.message && <Text style={styles.alertMessage}>{alertModal.message}</Text>}
+              <View style={[styles.alertButtons, alertModal.buttons.length > 1 && { flexDirection: 'row' }]}>
+                {alertModal.buttons.map((btn, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={[styles.alertBtn, alertModal.buttons.length > 1 && { flex: 1 }, btn.style === 'destructive' && styles.alertBtnDestructive]}
+                    onPress={() => { setAlertModal(null); btn.onPress?.(); }}
+                  >
+                    <Text style={[styles.alertBtnText, btn.style === 'destructive' && { color: theme.colors.error }]}>
+                      {btn.text}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    paddingHorizontal: theme.spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: theme.spacing.sm,
-  },
-  versionText: {
-    fontSize: 11,
-    color: theme.colors.textMuted,
-    marginTop: 4,
-  },
-  greeting: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: theme.colors.text,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background, paddingHorizontal: theme.spacing.md },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: theme.spacing.sm },
+  versionText: { fontSize: 11, color: theme.colors.textMuted, marginTop: 4 },
+  greeting: { fontSize: 26, fontWeight: '700', color: theme.colors.text },
+  subtitle: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 2 },
   startButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.radius.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 16,
-    marginBottom: theme.spacing.lg,
+    backgroundColor: theme.colors.primary, borderRadius: theme.radius.lg,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, paddingVertical: 16, marginBottom: theme.spacing.lg,
   },
-  startButtonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
-  },
+  startButtonText: { color: '#fff', fontSize: 17, fontWeight: '700' },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: 12, fontWeight: '700', color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5,
   },
+  // Template chips
   templateChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: theme.colors.card, borderRadius: theme.radius.full,
+    paddingLeft: 10, paddingRight: 8, paddingVertical: 7,
+    borderWidth: 1, borderColor: theme.colors.border, gap: 6,
   },
-  templateChipText: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
-  card: {
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-  },
-  cardRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  cardDate: {
-    fontSize: 12,
-    color: theme.colors.textMuted,
-    textTransform: 'capitalize',
-    marginBottom: 2,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.text,
-  },
-  cardStats: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  statChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.full,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  statText: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
-  empty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: theme.colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
+  templateChipMain: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4 },
+  templateChipText: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
+  // Cards
+  card: { backgroundColor: theme.colors.card, borderRadius: theme.radius.md, padding: theme.spacing.md, marginBottom: theme.spacing.sm },
+  cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  cardDate: { fontSize: 12, color: theme.colors.textMuted, textTransform: 'capitalize', marginBottom: 2 },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: theme.colors.text },
+  cardStats: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  statChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.colors.surface, borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3 },
+  statText: { fontSize: 12, color: theme.colors.textSecondary },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  emptyTitle: { fontSize: 18, fontWeight: '600', color: theme.colors.text, marginTop: 16, marginBottom: 8 },
+  emptyText: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  // Alert
+  alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 32 },
+  alertBox: { backgroundColor: theme.colors.card, borderRadius: theme.radius.lg, padding: 20, width: '100%', maxWidth: 340 },
+  alertTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text, textAlign: 'center', marginBottom: 6 },
+  alertMessage: { fontSize: 14, color: theme.colors.textSecondary, textAlign: 'center', marginBottom: 16, lineHeight: 20 },
+  alertButtons: { gap: 8 },
+  alertBtn: { paddingVertical: 12, borderRadius: theme.radius.md, backgroundColor: theme.colors.inputBackground, alignItems: 'center' },
+  alertBtnDestructive: { backgroundColor: '#FFF0F0' },
+  alertBtnText: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
 });
