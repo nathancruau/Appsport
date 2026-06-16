@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
 import { RootStackParamList, Workout } from '../types';
-import { getWorkoutDetail, WorkoutExerciseDetail, deleteWorkout, saveTemplate, updateWorkoutSets } from '../database/database';
+import { getWorkoutDetail, WorkoutExerciseDetail, deleteWorkout, saveTemplate, updateWorkoutSets, renameWorkout } from '../database/database';
 import { formatDateFull, formatDuration, muscleGroupLabel, formatWeight } from '../utils/calculations';
 
 type Route = RouteProp<RootStackParamList, 'WorkoutDetail'>;
@@ -24,6 +24,8 @@ export default function WorkoutDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
+  const [showRename, setShowRename] = useState(false);
+  const [renameName, setRenameName] = useState('');
   const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
   const [editModal, setEditModal] = useState<{
     ex: WorkoutExerciseDetail;
@@ -127,6 +129,10 @@ export default function WorkoutDetailScreen() {
             )}
           </View>
           <View style={styles.actions}>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => { setRenameName(workout.name ?? ''); setShowRename(true); }}>
+              <Ionicons name="create-outline" size={15} color={theme.colors.text} />
+              <Text style={styles.actionBtnText}>Renommer</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtn} onPress={() => { setTemplateName(workout.name ?? ''); setShowSaveTemplate(true); }}>
               <Ionicons name="bookmark-outline" size={15} color={theme.colors.text} />
               <Text style={styles.actionBtnText}>Enregistrer comme template</Text>
@@ -233,6 +239,38 @@ export default function WorkoutDetailScreen() {
               ))}
             </ScrollView>
           </KeyboardAvoidingView>
+        </Modal>
+      )}
+
+      {/* Rename Modal */}
+      {showRename && (
+        <Modal visible={true} animationType="slide" presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : 'fullScreen'}>
+          <View style={[styles.modal, { paddingTop: Platform.OS === 'ios' ? 0 : 16 }]}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowRename(false)}>
+                <Text style={styles.cancelText}>Annuler</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Renommer</Text>
+              <TouchableOpacity onPress={async () => {
+                await renameWorkout(params.workoutId, renameName.trim() || null);
+                setShowRename(false);
+                await load();
+              }}>
+                <Text style={[styles.cancelText, { color: theme.colors.primary, fontWeight: '700' }]}>Enregistrer</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ padding: theme.spacing.md }}>
+              <Text style={styles.label}>Nom de la séance</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex : Push A, Full body…"
+                placeholderTextColor={theme.colors.textMuted}
+                value={renameName}
+                onChangeText={setRenameName}
+                autoFocus
+              />
+            </View>
+          </View>
         </Modal>
       )}
 

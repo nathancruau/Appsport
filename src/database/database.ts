@@ -364,6 +364,14 @@ export async function deleteWorkout(workoutId: number): Promise<void> {
   await setJSON(KEY_WORKOUTS, workouts.filter((w) => w.id !== workoutId));
 }
 
+export async function renameWorkout(workoutId: number, name: string | null): Promise<void> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const idx = workouts.findIndex((w) => w.id === workoutId);
+  if (idx === -1) return;
+  workouts[idx] = { ...workouts[idx], name };
+  await setJSON(KEY_WORKOUTS, workouts);
+}
+
 export async function updateWorkoutSets(
   workoutId: number,
   exerciseId: number,
