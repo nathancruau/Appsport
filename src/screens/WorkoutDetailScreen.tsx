@@ -108,7 +108,15 @@ export default function WorkoutDetailScreen() {
         {/* Summary */}
         <View style={styles.summary}>
           <Text style={styles.date}>{formatDateFull(workout.date)}</Text>
-          {workout.name && <Text style={styles.name}>{workout.name}</Text>}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <Text style={[styles.name, { flex: 1, marginBottom: 0 }]}>{workout.name ?? 'Séance'}</Text>
+            <TouchableOpacity
+              onPress={() => { setRenameName(workout.name ?? ''); setShowRename(true); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="create-outline" size={18} color={theme.colors.textMuted} />
+            </TouchableOpacity>
+          </View>
           <View style={styles.stats}>
             {workout.duration != null && (
               <View style={styles.stat}>
@@ -131,10 +139,6 @@ export default function WorkoutDetailScreen() {
             )}
           </View>
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => { setRenameName(workout.name ?? ''); setShowRename(true); }}>
-              <Ionicons name="create-outline" size={15} color={theme.colors.text} />
-              <Text style={styles.actionBtnText}>Renommer</Text>
-            </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtn} onPress={() => { setTemplateName(workout.name ?? ''); setShowSaveTemplate(true); }}>
               <Ionicons name="bookmark-outline" size={15} color={theme.colors.text} />
               <Text style={styles.actionBtnText}>Enregistrer comme template</Text>

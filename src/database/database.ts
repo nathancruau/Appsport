@@ -90,6 +90,8 @@ const SEED: [string, string, Exercise['exerciseType'], ('weight' | 'time')?][] =
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
+const TIME_BASED_NAMES = ['Planche'];
+
 export async function initDB(): Promise<void> {
   const exercises = await getJSON<Exercise[]>(KEY_EXERCISES, []);
   if (exercises.length === 0) {
@@ -103,6 +105,15 @@ export async function initDB(): Promise<void> {
     }));
     await setJSON(KEY_EXERCISES, seeded);
     _nextId = Math.max(_nextId, SEED.length + 1);
+  } else {
+    // Migration: add trackingType to existing exercises
+    const needsMigration = exercises.some((e) => !e.trackingType);
+    if (needsMigration) {
+      await setJSON(KEY_EXERCISES, exercises.map((e) => ({
+        ...e,
+        trackingType: e.trackingType ?? (TIME_BASED_NAMES.includes(e.name) ? 'time' : 'weight'),
+      })));
+    }
   }
 }
 
