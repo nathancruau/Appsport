@@ -12,6 +12,7 @@ import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
 import { getRecentWorkouts, getTemplates, deleteTemplate } from '../database/database';
 import { formatDate, formatDuration } from '../utils/calculations';
 import { useAuth } from '../context/AuthContext';
+import { version } from '../../package.json';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList> };
 type WorkoutItem = Workout & { exerciseCount: number; totalVolume: number };
@@ -104,6 +105,7 @@ export default function HomeScreen({ navigation }: Props) {
               ? `${thisWeekCount} séance${thisWeekCount > 1 ? 's' : ''} cette semaine`
               : 'Prêt pour une séance ?'}
           </Text>
+          <Text style={styles.versionText}>v{version}</Text>
         </View>
         {user ? (
           <TouchableOpacity
@@ -228,6 +230,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: theme.spacing.sm },
   greeting: { fontSize: 26, fontWeight: '700', color: theme.colors.text },
   subtitle: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 2 },
+  versionText: { fontSize: 11, color: theme.colors.textMuted, marginTop: 4 },
   avatarBtn: { position: 'relative', marginTop: 4 },
   avatar: { width: 36, height: 36, borderRadius: 18 },
   avatarFallback: { backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' },
