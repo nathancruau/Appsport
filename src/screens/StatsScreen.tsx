@@ -7,7 +7,7 @@ import { LineChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
 import { PersonalRecord, RootStackParamList } from '../types';
-import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity, exportWorkoutsCSV, getFourWeekMuscleVolume } from '../database/database';
+import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity, exportWorkoutsCSV, getFourWeekMuscleVolume, getPRTimeline, PREvent } from '../database/database';
 import { muscleGroupLabel, formatDate, formatWeight } from '../utils/calculations';
 
 const { width } = Dimensions.get('window');
@@ -20,6 +20,7 @@ export default function StatsScreen() {
   const [totals, setTotals] = useState({ totalWorkouts: 0, totalVolume: 0, totalSets: 0 });
   const [muscleActivity, setMuscleActivity] = useState<Record<string, number>>({});
   const [muscleVolume, setMuscleVolume] = useState<Record<string, number>>({});
+  const [prTimeline, setPrTimeline] = useState<PREvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -31,13 +32,15 @@ export default function StatsScreen() {
         getTotalStats(),
         getWeekMuscleActivity(),
         getFourWeekMuscleVolume(),
-      ]).then(([p, w, t, m, mv]) => {
+        getPRTimeline(),
+      ]).then(([p, w, t, m, mv, tl]) => {
         if (active) {
           setPrs(p);
           setWeeklyVol(w);
           setTotals(t);
           setMuscleActivity(m);
           setMuscleVolume(mv);
+          setPrTimeline(tl);
           setLoading(false);
         }
       });
@@ -195,6 +198,31 @@ export default function StatsScreen() {
             </View>
           )}
 
+          {/* PR Timeline */}
+          {prTimeline.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Historique des records</Text>
+              {prTimeline.map((ev, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.timelineRow}
+                  onPress={() => navigation.navigate('ExerciseDetail', { exerciseId: ev.exerciseId, exerciseName: ev.exerciseName })}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.timelineDot, { backgroundColor: muscleColors[ev.muscleGroup] ?? '#888' }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.timelineName}>{ev.exerciseName}</Text>
+                    <Text style={styles.timelineDate}>{formatDate(ev.date)}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                    <Text style={styles.timelineSet}>{ev.weight} kg × {ev.reps}</Text>
+                    <Text style={styles.timelineOrm}>1RM ≈ {ev.oneRM} kg</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
           {/* Personal Records */}
           {prs.length > 0 && (
             <View style={styles.section}>
@@ -304,6 +332,16 @@ const styles = StyleSheet.create({
   muscleBarTrack: { flex: 1, height: 8, backgroundColor: theme.colors.inputBackground, borderRadius: 4, overflow: 'hidden' },
   muscleBarFill: { height: '100%', borderRadius: 4 },
   muscleBarVol: { width: 36, fontSize: 11, color: theme.colors.textMuted, textAlign: 'right' },
+  timelineRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 6,
+  },
+  timelineDot: { width: 10, height: 10, borderRadius: 5 },
+  timelineName: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
+  timelineDate: { fontSize: 11, color: theme.colors.textMuted, marginTop: 1, textTransform: 'capitalize' },
+  timelineSet: { fontSize: 13, color: theme.colors.textSecondary },
+  timelineOrm: { fontSize: 13, fontWeight: '700', color: theme.colors.primary },
   // Muscle heatmap (grille fixe 4×2)
   muscleBubbleGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingVertical: 8, gap: 0 },
   muscleBubbleContainer: { alignItems: 'center', gap: 4, width: '25%', paddingVertical: 8 },

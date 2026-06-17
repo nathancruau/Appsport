@@ -418,6 +418,43 @@ export async function getExerciseBest(exerciseId: number): Promise<BestSet | und
   return best;
 }
 
+// ─── PR Timeline ──────────────────────────────────────────────────────────────
+
+export interface PREvent {
+  date: string;
+  workoutId: number;
+  exerciseId: number;
+  exerciseName: string;
+  muscleGroup: string;
+  weight: number;
+  reps: number;
+  oneRM: number;
+}
+
+export async function getPRTimeline(): Promise<PREvent[]> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const best = new Map<number, number>();
+  const events: PREvent[] = [];
+  for (const w of [...workouts].reverse()) {
+    for (const ex of w.exercises) {
+      for (const s of ex.sets) {
+        if (!s.completed || s.isWarmup || s.reps == null || s.weight == null) continue;
+        const orm = estimateOneRM(s.weight, s.reps);
+        if (orm > (best.get(ex.exerciseId) ?? 0)) {
+          best.set(ex.exerciseId, orm);
+          events.push({
+            date: w.date, workoutId: w.id,
+            exerciseId: ex.exerciseId, exerciseName: ex.exerciseName,
+            muscleGroup: ex.muscleGroup,
+            weight: s.weight, reps: s.reps, oneRM: Math.round(orm),
+          });
+        }
+      }
+    }
+  }
+  return events.reverse().slice(0, 30);
+}
+
 // ─── Templates ────────────────────────────────────────────────────────────────
 
 export async function getTemplates(): Promise<WorkoutTemplate[]> {
