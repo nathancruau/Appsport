@@ -856,10 +856,21 @@ function ExerciseBlock({
 
       {ae.sets.map((s, si) => {
         const prev = prevWorking[si];
+        let compColor: string | null = null;
+        if (s.completed && prev) {
+          if (ae.exercise.trackingType === 'time') {
+            const curr = Number(s.duration), prevD = prev.duration ?? 0;
+            if (curr > 0 && prevD > 0) compColor = curr > prevD ? '#34C759' : curr < prevD ? '#FF3B30' : null;
+          } else {
+            const currVol = Number(s.weight) * Number(s.reps);
+            const prevVol = (prev.weight ?? 0) * (prev.reps ?? 0);
+            if (currVol > 0 && prevVol > 0) compColor = currVol > prevVol ? '#34C759' : currVol < prevVol ? '#FF3B30' : null;
+          }
+        }
         return (
           <React.Fragment key={si}>
             <SwipeableRow onDelete={() => onRemoveSet(si)}>
-              <View style={[styles.setRow, s.completed && styles.setRowDone]}>
+              <View style={[styles.setRow, s.completed && styles.setRowDone, compColor ? { borderLeftWidth: 3, borderLeftColor: compColor } : null]}>
                 <Text style={[styles.setNum, s.completed && styles.setNumDone]}>{si + 1}</Text>
                 <Text style={styles.setPrev}>
                   {ae.exercise.trackingType === 'time'
