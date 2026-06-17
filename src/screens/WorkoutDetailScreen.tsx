@@ -182,6 +182,16 @@ export default function WorkoutDetailScreen() {
             )}
           </View>
           <View style={styles.actions}>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => navigation.navigate('ActiveWorkout', {
+                templateExerciseIds: exercises.map((e) => e.exerciseId),
+                workoutName: workout.name ?? undefined,
+              })}
+            >
+              <Ionicons name="refresh-outline" size={15} color={theme.colors.text} />
+              <Text style={styles.actionBtnText}>Refaire cette séance</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtn} onPress={() => { setTemplateName(workout.name ?? ''); setShowSaveTemplate(true); }}>
               <Ionicons name="bookmark-outline" size={15} color={theme.colors.text} />
               <Text style={styles.actionBtnText}>Enregistrer comme template</Text>

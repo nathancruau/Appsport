@@ -255,6 +255,9 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
       timerRef.current = setInterval(() => dispatch({ type: 'TICK' }), 1000);
       const templateIds: number[] | undefined = route?.params?.templateExerciseIds;
       if (templateIds?.length) {
+        if (route?.params?.workoutName) {
+          dispatch({ type: 'SET_NAME', value: route.params.workoutName });
+        }
         for (const id of templateIds) {
           const ex = exercises.find((e) => e.id === id);
           if (!ex) continue;

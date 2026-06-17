@@ -85,7 +85,7 @@ export interface ActiveWorkout {
 
 export type RootStackParamList = {
   Main: undefined;
-  ActiveWorkout: { templateExerciseIds?: number[] } | undefined;
+  ActiveWorkout: { templateExerciseIds?: number[]; workoutName?: string } | undefined;
   WorkoutDetail: { workoutId: number };
   ExerciseDetail: { exerciseId: number; exerciseName: string };
 };
