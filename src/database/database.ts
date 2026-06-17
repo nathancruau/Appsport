@@ -182,6 +182,24 @@ export async function deleteExercise(id: number): Promise<void> {
   await setJSON(KEY_EXERCISES, exercises.filter((e) => e.id !== id));
 }
 
+export async function updateExercise(id: number, updates: { name?: string; muscleGroup?: string; trackingType?: 'weight' | 'time' }): Promise<void> {
+  const exercises = await getAllExercises();
+  await setJSON(KEY_EXERCISES, exercises.map((e) => e.id === id ? { ...e, ...updates } : e));
+  if (updates.name || updates.trackingType) {
+    const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+    if (workouts.some((w) => w.exercises.some((ex) => ex.exerciseId === id))) {
+      await setJSON(KEY_WORKOUTS, workouts.map((w) => ({
+        ...w,
+        exercises: w.exercises.map((ex) => ex.exerciseId !== id ? ex : {
+          ...ex,
+          exerciseName: updates.name ?? ex.exerciseName,
+          trackingType: updates.trackingType ?? ex.trackingType,
+        }),
+      })));
+    }
+  }
+}
+
 // ─── Save workout ─────────────────────────────────────────────────────────────
 
 export async function saveWorkout(params: {
