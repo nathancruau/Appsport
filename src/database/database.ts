@@ -45,6 +45,7 @@ const KEY_EXERCISES = 'exercises';
 const KEY_WORKOUTS = 'workouts';
 const KEY_TEMPLATES = 'templates';
 const KEY_REST_TIMER = 'restTimerSettings';
+const KEY_PAUSED_WORKOUT = 'pausedWorkout';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -586,6 +587,20 @@ export async function getRestTimerSettings(): Promise<RestTimerSettings> {
 
 export async function saveRestTimerSettings(settings: RestTimerSettings): Promise<void> {
   await setJSON(KEY_REST_TIMER, settings);
+}
+
+// ─── Paused workout ────────────────────────────────────────────────────────────
+
+export async function savePausedWorkout(data: object): Promise<void> {
+  await setJSON(KEY_PAUSED_WORKOUT, data);
+}
+
+export async function getPausedWorkout(): Promise<any | null> {
+  return getJSON<any>(KEY_PAUSED_WORKOUT, null);
+}
+
+export async function clearPausedWorkout(): Promise<void> {
+  await AsyncStorage.removeItem(KEY_PAUSED_WORKOUT);
 }
 
 // ─── Muscle heatmap ───────────────────────────────────────────────────────────

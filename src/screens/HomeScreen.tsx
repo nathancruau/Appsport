@@ -9,7 +9,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
-import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings } from '../database/database';
+import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings, getPausedWorkout } from '../database/database';
 import { formatDate, formatDuration } from '../utils/calculations';
 import { useAuth } from '../context/AuthContext';
 import { version } from '../../package.json';
@@ -27,13 +27,14 @@ export default function HomeScreen({ navigation }: Props) {
   const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [appSettings, setAppSettings] = useState<RestTimerSettings>({ enabled: true, durationSeconds: 90, showRPE: true });
+  const [hasPausedWorkout, setHasPausedWorkout] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       setLoading(true);
-      Promise.all([getRecentWorkouts(10), getTemplates(), getRestTimerSettings()]).then(([data, tmpl, settings]) => {
-        if (active) { setWorkouts(data); setTemplates(tmpl); setAppSettings(settings); setLoading(false); }
+      Promise.all([getRecentWorkouts(10), getTemplates(), getRestTimerSettings(), getPausedWorkout()]).then(([data, tmpl, settings, paused]) => {
+        if (active) { setWorkouts(data); setTemplates(tmpl); setAppSettings(settings); setHasPausedWorkout(!!paused); setLoading(false); }
       });
       return () => { active = false; };
     }, [])
@@ -130,6 +131,18 @@ export default function HomeScreen({ navigation }: Props) {
           </TouchableOpacity>
         )}
       </View>
+
+      {hasPausedWorkout && (
+        <TouchableOpacity
+          style={styles.resumeBtn}
+          onPress={() => navigation.navigate('ActiveWorkout', { resume: true })}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="play-circle" size={20} color="#fff" />
+          <Text style={styles.resumeBtnText}>Reprendre la séance en cours</Text>
+          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.7)" />
+        </TouchableOpacity>
+      )}
 
       <TouchableOpacity
         style={styles.startButton}
@@ -305,6 +318,12 @@ const styles = StyleSheet.create({
     gap: 10, paddingVertical: 16, marginBottom: theme.spacing.lg,
   },
   startButtonText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  resumeBtn: {
+    backgroundColor: '#FF9F0A', borderRadius: theme.radius.lg,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 13, paddingHorizontal: 16, marginBottom: theme.spacing.sm,
+  },
+  resumeBtnText: { flex: 1, color: '#fff', fontSize: 15, fontWeight: '700' },
   sectionTitle: {
     fontSize: 12, fontWeight: '700', color: theme.colors.textSecondary,
     marginBottom: theme.spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5,

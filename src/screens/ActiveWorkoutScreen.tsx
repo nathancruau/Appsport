@@ -13,6 +13,7 @@ import {
   getAllExercises, getLastWorkoutSets, saveWorkout,
   getExerciseBest, saveTemplate,
   getRestTimerSettings, saveRestTimerSettings, RestTimerSettings,
+  savePausedWorkout, getPausedWorkout, clearPausedWorkout,
 } from '../database/database';
 import { formatDuration, todayISO, muscleGroupLabel, estimateOneRM } from '../utils/calculations';
 
@@ -40,6 +41,7 @@ type Action =
   | { type: 'TOGGLE_COMPLETE'; ei: number; si: number }
   | { type: 'MOVE_EXERCISE'; index: number; direction: 'up' | 'down' }
   | { type: 'TOGGLE_SUPERSET'; index: number }
+  | { type: 'RESTORE'; payload: { name: string; exercises: ActiveExercise[]; elapsedSeconds: number } }
   | { type: 'TICK' }
   | { type: 'TOGGLE_PICKER' };
 
@@ -145,6 +147,7 @@ function reducer(state: State, action: Action): State {
       exs[action.index] = { ...exs[action.index], isSuperset: !exs[action.index].isSuperset };
       return { ...state, exercises: exs };
     }
+    case 'RESTORE': return { ...state, name: action.payload.name, exercises: action.payload.exercises, elapsedSeconds: action.payload.elapsedSeconds };
     case 'TICK': return { ...state, elapsedSeconds: state.elapsedSeconds + 1 };
     case 'TOGGLE_PICKER': return { ...state, showPicker: !state.showPicker };
     default: return state;
@@ -256,7 +259,10 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
       setRestSettings(settings);
       timerRef.current = setInterval(() => { if (!pausedRef.current) dispatch({ type: 'TICK' }); }, 1000);
       const templateIds: number[] | undefined = route?.params?.templateExerciseIds;
-      if (templateIds?.length) {
+      if (route?.params?.resume) {
+        const saved = await getPausedWorkout();
+        if (saved) dispatch({ type: 'RESTORE', payload: saved });
+      } else if (templateIds?.length) {
         if (route?.params?.workoutName) {
           dispatch({ type: 'SET_NAME', value: route.params.workoutName });
         }
@@ -371,6 +377,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                 })),
               })),
             });
+            await clearPausedWorkout();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             const totalVolume = completedSets.reduce((sum, s) => sum + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0);
             setSummaryData({
@@ -389,9 +396,16 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
   const confirmDiscard = () => {
     if (state.exercises.length === 0) { navigation.goBack(); return; }
-    showAlert('Abandonner la séance ?', 'Tes données non sauvegardées seront perdues.', [
+    showAlert('Séance en cours', 'Que veux-tu faire ?', [
       { text: 'Continuer', style: 'cancel' },
-      { text: 'Abandonner', style: 'destructive', onPress: () => navigation.goBack() },
+      { text: 'Mettre en pause', style: 'default', onPress: async () => {
+        await savePausedWorkout({ name: state.name, exercises: state.exercises, elapsedSeconds: state.elapsedSeconds });
+        navigation.goBack();
+      }},
+      { text: 'Abandonner', style: 'destructive', onPress: async () => {
+        await clearPausedWorkout();
+        navigation.goBack();
+      }},
     ]);
   };
 
@@ -443,14 +457,8 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
           <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
         </TouchableOpacity>
         <View style={styles.timerBox}>
-          <TouchableOpacity
-            onPress={() => { pausedRef.current = !pausedRef.current; setPaused((p) => !p); }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
-          >
-            <Ionicons name={paused ? 'play-circle' : 'pause-circle'} size={20} color={paused ? theme.colors.primary : theme.colors.textSecondary} />
-          </TouchableOpacity>
           <Ionicons name="time-outline" size={14} color={theme.colors.textSecondary} />
-          <Text style={[styles.timer, paused && { color: theme.colors.textMuted }]}>{formatDuration(state.elapsedSeconds)}</Text>
+          <Text style={styles.timer}>{formatDuration(state.elapsedSeconds)}</Text>
           <TouchableOpacity onPress={() => setShowTimerSettings(true)} style={styles.restChip} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="timer-outline" size={12} color={restSettings.enabled ? theme.colors.primary : theme.colors.textMuted} />
             <Text style={styles.restChipText}>{restSettings.enabled ? `${restSettings.durationSeconds}s` : 'off'}</Text>
@@ -507,6 +515,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                     onMoveUp={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'up' })}
                     onMoveDown={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'down' })}
                     onToggleSuperset={() => dispatch({ type: 'TOGGLE_SUPERSET', index: ei })}
+                    showRPE={restSettings.showRPE ?? true}
                   />
                 </React.Fragment>
               );
@@ -766,7 +775,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 function ExerciseBlock({
   ae, ei, isFirst, isLast, isTopOfSuperset, supersetPartnerName,
   onAddSet, onDuplicateSet, onRemoveSet, onUpdateSet, onUpdateRPE, onToggleComplete,
-  onRemoveExercise, onMoveUp, onMoveDown, onToggleSuperset,
+  onRemoveExercise, onMoveUp, onMoveDown, onToggleSuperset, showRPE,
 }: {
   ae: ActiveExercise; ei: number;
   isFirst: boolean; isLast: boolean;
@@ -782,6 +791,7 @@ function ExerciseBlock({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onToggleSuperset: () => void;
+  showRPE: boolean;
 }) {
   const prevWorking = ae.previousSets.filter((s) => !s.isWarmup && s.completed);
   const muscleColor = muscleColors[ae.exercise.muscleGroup] ?? '#888';
@@ -933,7 +943,7 @@ function ExerciseBlock({
                 </TouchableOpacity>
               </View>
             </SwipeableRow>
-            {s.completed && (restSettings.showRPE ?? true) && (
+            {s.completed && showRPE && (
               <View style={styles.rpeBlock}>
                 <Text style={styles.rpeLabel}>RPE</Text>
                 <View style={styles.rpeRow}>
