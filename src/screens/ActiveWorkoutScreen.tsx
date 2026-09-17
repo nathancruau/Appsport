@@ -205,9 +205,11 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
   const [allExercises, setAllExercises] = useState<Exercise[]>([]);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
 
   // Rest timer
-  const [restSettings, setRestSettings] = useState<RestTimerSettings>({ enabled: true, durationSeconds: 90 });
+  const [restSettings, setRestSettings] = useState<RestTimerSettings>({ enabled: true, durationSeconds: 90, showRPE: true });
   const [restRemaining, setRestRemaining] = useState<number | null>(null);
   const [isRestExpanded, setIsRestExpanded] = useState(false);
   const [showTimerSettings, setShowTimerSettings] = useState(false);
@@ -252,7 +254,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
       const [exercises, settings] = await Promise.all([getAllExercises(), getRestTimerSettings()]);
       setAllExercises(exercises);
       setRestSettings(settings);
-      timerRef.current = setInterval(() => dispatch({ type: 'TICK' }), 1000);
+      timerRef.current = setInterval(() => { if (!pausedRef.current) dispatch({ type: 'TICK' }); }, 1000);
       const templateIds: number[] | undefined = route?.params?.templateExerciseIds;
       if (templateIds?.length) {
         if (route?.params?.workoutName) {
@@ -361,7 +363,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                 exerciseId: ae.exercise.id,
                 sets: ae.sets.map((s) => ({
                   reps: ae.exercise.trackingType === 'time' ? null : (s.reps ? Number(s.reps) : null),
-                  weight: ae.exercise.trackingType === 'time' ? null : (s.weight ? Number(s.weight) : null),
+                  weight: ae.exercise.trackingType === 'time' ? null : (s.weight ? Number(s.weight.replace(',', '.')) : null),
                   duration: ae.exercise.trackingType === 'time' ? (s.duration ? Number(s.duration) : null) : null,
                   isWarmup: s.isWarmup,
                   completed: s.completed,
@@ -441,8 +443,14 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
           <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
         </TouchableOpacity>
         <View style={styles.timerBox}>
+          <TouchableOpacity
+            onPress={() => { pausedRef.current = !pausedRef.current; setPaused((p) => !p); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+          >
+            <Ionicons name={paused ? 'play-circle' : 'pause-circle'} size={20} color={paused ? theme.colors.primary : theme.colors.textSecondary} />
+          </TouchableOpacity>
           <Ionicons name="time-outline" size={14} color={theme.colors.textSecondary} />
-          <Text style={styles.timer}>{formatDuration(state.elapsedSeconds)}</Text>
+          <Text style={[styles.timer, paused && { color: theme.colors.textMuted }]}>{formatDuration(state.elapsedSeconds)}</Text>
           <TouchableOpacity onPress={() => setShowTimerSettings(true)} style={styles.restChip} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="timer-outline" size={12} color={restSettings.enabled ? theme.colors.primary : theme.colors.textMuted} />
             <Text style={styles.restChipText}>{restSettings.enabled ? `${restSettings.durationSeconds}s` : 'off'}</Text>
@@ -792,7 +800,7 @@ function ExerciseBlock({
   };
 
   return (
-    <View style={[styles.exBlock, inSuperset && styles.exBlockSuperset]}>
+    <View style={[styles.exBlock, ae.isSuperset && styles.exBlockSuperset, isTopOfSuperset && !ae.isSuperset && styles.exBlockSupersetTop]}>
       <View style={styles.exHeader}>
         <View style={[styles.muscleTag, { backgroundColor: muscleColor + '22' }]}>
           <View style={[styles.dot, { backgroundColor: muscleColor }]} />
@@ -855,6 +863,7 @@ function ExerciseBlock({
           </>
         )}
         <Text style={[styles.setCell, { width: 36 }]}> </Text>
+        <Text style={[styles.setCell, { width: 24 }]}> </Text>
       </View>
 
       {ae.sets.map((s, si) => {
@@ -915,9 +924,16 @@ function ExerciseBlock({
                 <TouchableOpacity onPress={() => onToggleComplete(si)} style={[styles.checkBtn, s.completed && styles.checkBtnDone]}>
                   <Ionicons name={s.completed ? 'checkmark' : 'ellipse-outline'} size={18} color={s.completed ? '#fff' : theme.colors.textMuted} />
                 </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => onRemoveSet(si)}
+                  style={styles.deleteSetBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                >
+                  <Ionicons name="remove-circle" size={16} color={theme.colors.error + '55'} />
+                </TouchableOpacity>
               </View>
             </SwipeableRow>
-            {s.completed && (
+            {s.completed && (restSettings.showRPE ?? true) && (
               <View style={styles.rpeBlock}>
                 <Text style={styles.rpeLabel}>RPE</Text>
                 <View style={styles.rpeRow}>
@@ -996,6 +1012,7 @@ const styles = StyleSheet.create({
     marginHorizontal: theme.spacing.md, marginBottom: theme.spacing.sm, padding: theme.spacing.md,
   },
   exBlockSuperset: { borderLeftWidth: 3, borderLeftColor: SUPERSET_COLOR },
+  exBlockSupersetTop: { borderTopWidth: 2, borderTopColor: SUPERSET_COLOR + '60', borderLeftWidth: 0 },
   exHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   exHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   muscleTag: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3 },
@@ -1033,6 +1050,7 @@ const styles = StyleSheet.create({
   },
   checkBtn: { width: 36, height: 36, flexShrink: 0, borderRadius: theme.radius.sm, backgroundColor: theme.colors.inputBackground, alignItems: 'center', justifyContent: 'center' },
   checkBtnDone: { backgroundColor: theme.colors.text },
+  deleteSetBtn: { width: 24, height: 36, alignItems: 'center', justifyContent: 'center' },
 
   // RPE - 2 rows
   rpeBlock: { paddingHorizontal: 4, paddingBottom: 6, paddingTop: 2, gap: 4 },

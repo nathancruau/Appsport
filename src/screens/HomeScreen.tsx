@@ -9,7 +9,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
-import { getRecentWorkouts, getTemplates, deleteTemplate } from '../database/database';
+import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings } from '../database/database';
 import { formatDate, formatDuration } from '../utils/calculations';
 import { useAuth } from '../context/AuthContext';
 import { version } from '../../package.json';
@@ -25,13 +25,15 @@ export default function HomeScreen({ navigation }: Props) {
   const [templates, setTemplates] = useState<WorkoutTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [appSettings, setAppSettings] = useState<RestTimerSettings>({ enabled: true, durationSeconds: 90, showRPE: true });
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       setLoading(true);
-      Promise.all([getRecentWorkouts(10), getTemplates()]).then(([data, tmpl]) => {
-        if (active) { setWorkouts(data); setTemplates(tmpl); setLoading(false); }
+      Promise.all([getRecentWorkouts(10), getTemplates(), getRestTimerSettings()]).then(([data, tmpl, settings]) => {
+        if (active) { setWorkouts(data); setTemplates(tmpl); setAppSettings(settings); setLoading(false); }
       });
       return () => { active = false; };
     }, [])
@@ -110,14 +112,7 @@ export default function HomeScreen({ navigation }: Props) {
         {user ? (
           <TouchableOpacity
             style={styles.avatarBtn}
-            onPress={() => showAlert(
-              user.displayName ?? 'Compte',
-              user.email ?? '',
-              [
-                { text: 'Déconnexion', style: 'destructive', onPress: signOut },
-                { text: 'Fermer', style: 'cancel' },
-              ]
-            )}
+            onPress={() => setShowSettings(true)}
           >
             {user.photoURL ? (
               <Image source={{ uri: user.photoURL }} style={styles.avatar} />
@@ -221,6 +216,67 @@ export default function HomeScreen({ navigation }: Props) {
           </View>
         </Modal>
       )}
+
+      {/* Settings Overlay */}
+      {showSettings && (
+        <View style={[StyleSheet.absoluteFillObject, styles.settingsOverlay]}>
+          <View style={[styles.settingsHeader, { paddingTop: Math.max(insets.top, 16) }]}>
+            <Text style={styles.settingsTitle}>Paramètres</Text>
+            <TouchableOpacity onPress={() => setShowSettings(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Ionicons name="close" size={22} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {user && (
+            <View style={styles.settingsUserRow}>
+              {user.photoURL ? (
+                <Image source={{ uri: user.photoURL }} style={styles.settingsAvatar} />
+              ) : (
+                <View style={[styles.settingsAvatar, styles.avatarFallback]}>
+                  <Text style={styles.avatarInitial}>{(user.displayName ?? user.email ?? '?')[0].toUpperCase()}</Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingsUserName}>{user.displayName ?? 'Utilisateur'}</Text>
+                <Text style={styles.settingsUserEmail}>{user.email ?? ''}</Text>
+              </View>
+            </View>
+          )}
+
+          <View style={styles.settingsSection}>
+            <Text style={styles.settingsSectionTitle}>Séance</Text>
+            <TouchableOpacity
+              style={styles.settingsRow}
+              onPress={async () => {
+                const updated = { ...appSettings, showRPE: !appSettings.showRPE };
+                setAppSettings(updated);
+                await saveRestTimerSettings(updated);
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingsRowLabel}>Afficher le RPE</Text>
+                <Text style={styles.settingsRowSub}>Ressenti perçu après chaque série</Text>
+              </View>
+              <View style={[styles.toggle, appSettings.showRPE && styles.toggleOn]}>
+                <View style={[styles.toggleThumb, appSettings.showRPE && styles.toggleThumbOn]} />
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {user && (
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionTitle}>Compte</Text>
+              <TouchableOpacity
+                style={[styles.settingsRow, { borderBottomWidth: 0 }]}
+                onPress={async () => { setShowSettings(false); await signOut(); }}
+              >
+                <Ionicons name="log-out-outline" size={18} color={theme.colors.error} style={{ marginRight: 10 }} />
+                <Text style={[styles.settingsRowLabel, { color: theme.colors.error }]}>Déconnexion</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -282,4 +338,36 @@ const styles = StyleSheet.create({
   alertBtn: { paddingVertical: 12, borderRadius: theme.radius.md, backgroundColor: theme.colors.inputBackground, alignItems: 'center' },
   alertBtnDestructive: { backgroundColor: '#FFF0F0' },
   alertBtnText: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
+  // Settings overlay
+  settingsOverlay: { backgroundColor: theme.colors.background, zIndex: 100 },
+  settingsHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: theme.spacing.md, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+  },
+  settingsTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text },
+  settingsUserRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+  },
+  settingsAvatar: { width: 44, height: 44, borderRadius: 22 },
+  settingsUserName: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
+  settingsUserEmail: { fontSize: 13, color: theme.colors.textMuted, marginTop: 2 },
+  settingsSection: {
+    marginTop: theme.spacing.md,
+    marginHorizontal: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.md, overflow: 'hidden',
+  },
+  settingsSectionTitle: { fontSize: 11, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, padding: 12, paddingBottom: 0 },
+  settingsRow: {
+    flexDirection: 'row', alignItems: 'center', padding: 14,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+  },
+  settingsRowLabel: { fontSize: 15, color: theme.colors.text, fontWeight: '500' },
+  settingsRowSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  toggle: { width: 44, height: 26, borderRadius: 13, backgroundColor: theme.colors.border, justifyContent: 'center', paddingHorizontal: 2 },
+  toggleOn: { backgroundColor: theme.colors.primary },
+  toggleThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } },
+  toggleThumbOn: { transform: [{ translateX: 18 }] },
 });

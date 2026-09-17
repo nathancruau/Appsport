@@ -577,10 +577,11 @@ export async function updateWorkoutSets(
 export interface RestTimerSettings {
   enabled: boolean;
   durationSeconds: number;
+  showRPE: boolean;
 }
 
 export async function getRestTimerSettings(): Promise<RestTimerSettings> {
-  return getJSON<RestTimerSettings>(KEY_REST_TIMER, { enabled: true, durationSeconds: 90 });
+  return getJSON<RestTimerSettings>(KEY_REST_TIMER, { enabled: true, durationSeconds: 90, showRPE: true });
 }
 
 export async function saveRestTimerSettings(settings: RestTimerSettings): Promise<void> {
