@@ -73,7 +73,7 @@ interface StoredWorkoutExercise {
   exerciseId: number;
   exerciseName: string;
   muscleGroup: string;
-  trackingType?: 'weight' | 'time';
+  trackingType?: 'weight' | 'time' | 'weight+time';
   orderIndex: number;
   sets: WorkoutSet[];
 }
@@ -163,7 +163,7 @@ export async function getAllExercises(): Promise<Exercise[]> {
   return getJSON<Exercise[]>(KEY_EXERCISES, []);
 }
 
-export async function createExercise(name: string, muscleGroup: string, exerciseType: string, trackingType: 'weight' | 'time' = 'weight'): Promise<Exercise> {
+export async function createExercise(name: string, muscleGroup: string, exerciseType: string, trackingType: 'weight' | 'time' | 'weight+time' = 'weight'): Promise<Exercise> {
   const exercises = await getAllExercises();
   const exercise: Exercise = {
     id: nextId(),
@@ -183,7 +183,7 @@ export async function deleteExercise(id: number): Promise<void> {
   await setJSON(KEY_EXERCISES, exercises.filter((e) => e.id !== id));
 }
 
-export async function updateExercise(id: number, updates: { name?: string; muscleGroup?: string; trackingType?: 'weight' | 'time' }): Promise<void> {
+export async function updateExercise(id: number, updates: { name?: string; muscleGroup?: string; trackingType?: 'weight' | 'time' | 'weight+time' }): Promise<void> {
   const exercises = await getAllExercises();
   await setJSON(KEY_EXERCISES, exercises.map((e) => e.id === id ? { ...e, ...updates } : e));
   if (updates.name || updates.trackingType) {
@@ -282,7 +282,7 @@ export interface WorkoutExerciseDetail {
   orderIndex: number;
   exerciseName: string;
   muscleGroup: string;
-  trackingType: 'weight' | 'time';
+  trackingType: 'weight' | 'time' | 'weight+time';
   sets: WorkoutSet[];
 }
 
