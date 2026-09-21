@@ -7,10 +7,103 @@ import { LineChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
 import { PersonalRecord, RootStackParamList } from '../types';
-import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity, exportWorkoutsCSV, getFourWeekMuscleVolume, getPRTimeline, PREvent } from '../database/database';
+import { getAllPersonalRecords, getWeeklyVolume, getTotalStats, getWeekMuscleActivity, exportWorkoutsCSV, getFourWeekMuscleVolume, getPRTimeline, PREvent, getTrainingCalendar } from '../database/database';
 import { muscleGroupLabel, formatDate, formatWeight } from '../utils/calculations';
 
 const { width } = Dimensions.get('window');
+
+// ─── Calendar heatmap ─────────────────────────────────────────────────────────
+
+const DAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+function buildMonthWeeks(year: number, month: number): (Date | null)[][] {
+  const weeks: (Date | null)[][] = [];
+  let week: (Date | null)[] = [];
+  const firstDay = new Date(year, month, 1);
+  const offset = (firstDay.getDay() + 6) % 7; // Mon=0
+  for (let i = 0; i < offset; i++) week.push(null);
+  const d = new Date(year, month, 1);
+  while (d.getMonth() === month) {
+    week.push(new Date(d));
+    if (week.length === 7) { weeks.push(week); week = []; }
+    d.setDate(d.getDate() + 1);
+  }
+  if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week); }
+  return weeks;
+}
+
+function CalendarHeatmap({ data }: { data: { date: string; volume: number; count: number }[] }) {
+  const dayMap = new Map(data.map((d) => [d.date, d]));
+  const maxVol = data.length > 0 ? Math.max(...data.map((d) => d.volume)) : 1;
+  const cellSize = Math.floor((width - 32 - 6 * 2) / 7);
+
+  const today = new Date();
+  const months = [2, 1, 0].map((offset) => {
+    const d = new Date(today.getFullYear(), today.getMonth() - offset, 1);
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
+  return (
+    <View style={{ gap: 20 }}>
+      {months.map(({ year, month }) => {
+        const weeks = buildMonthWeeks(year, month);
+        return (
+          <View key={`${year}-${month}`}>
+            <Text style={calStyles.monthLabel}>{MONTH_NAMES[month]} {year}</Text>
+            <View style={calStyles.dayHeaders}>
+              {DAY_LABELS.map((d, i) => (
+                <View key={i} style={[calStyles.cell, { width: cellSize, height: 20 }]}>
+                  <Text style={calStyles.dayLabel}>{d}</Text>
+                </View>
+              ))}
+            </View>
+            {weeks.map((week, wi) => (
+              <View key={wi} style={calStyles.weekRow}>
+                {week.map((day, di) => {
+                  if (!day) return <View key={di} style={[calStyles.cell, { width: cellSize, height: cellSize }]} />;
+                  const dateStr = day.toISOString().slice(0, 10);
+                  const entry = dayMap.get(dateStr);
+                  const isToday = dateStr === today.toISOString().slice(0, 10);
+                  const opacity = entry ? Math.max(0.25, entry.volume / maxVol) : 0;
+                  return (
+                    <View
+                      key={di}
+                      style={[
+                        calStyles.cell,
+                        { width: cellSize, height: cellSize },
+                        calStyles.dayCell,
+                        entry ? { backgroundColor: `rgba(26, 26, 26, ${opacity})` } : null,
+                        isToday ? calStyles.todayCell : null,
+                      ]}
+                    >
+                      <Text style={[calStyles.dayNum, entry ? calStyles.dayNumActive : null, isToday ? calStyles.dayNumToday : null]}>
+                        {day.getDate()}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+const calStyles = StyleSheet.create({
+  monthLabel: { fontSize: 13, fontWeight: '700', color: '#1A1A1A', marginBottom: 8, textTransform: 'capitalize' },
+  dayHeaders: { flexDirection: 'row', gap: 2, marginBottom: 2 },
+  dayLabel: { fontSize: 9, fontWeight: '700', color: '#999', textAlign: 'center' },
+  weekRow: { flexDirection: 'row', gap: 2, marginBottom: 2 },
+  cell: { gap: 0, alignItems: 'center', justifyContent: 'center' },
+  dayCell: { borderRadius: 6, backgroundColor: '#F0F0F0' },
+  todayCell: { borderWidth: 1.5, borderColor: '#1A1A1A' },
+  dayNum: { fontSize: 10, fontWeight: '500', color: '#999' },
+  dayNumActive: { color: '#fff', fontWeight: '700' },
+  dayNumToday: { color: '#1A1A1A' },
+});
 
 export default function StatsScreen() {
   const insets = useSafeAreaInsets();
@@ -21,6 +114,7 @@ export default function StatsScreen() {
   const [muscleActivity, setMuscleActivity] = useState<Record<string, number>>({});
   const [muscleVolume, setMuscleVolume] = useState<Record<string, number>>({});
   const [prTimeline, setPrTimeline] = useState<PREvent[]>([]);
+  const [calendarData, setCalendarData] = useState<{ date: string; volume: number; count: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
@@ -33,7 +127,8 @@ export default function StatsScreen() {
         getWeekMuscleActivity(),
         getFourWeekMuscleVolume(),
         getPRTimeline(),
-      ]).then(([p, w, t, m, mv, tl]) => {
+        getTrainingCalendar(),
+      ]).then(([p, w, t, m, mv, tl, cal]) => {
         if (active) {
           setPrs(p);
           setWeeklyVol(w);
@@ -41,6 +136,7 @@ export default function StatsScreen() {
           setMuscleActivity(m);
           setMuscleVolume(mv);
           setPrTimeline(tl);
+          setCalendarData(cal);
           setLoading(false);
         }
       });
@@ -124,6 +220,12 @@ export default function StatsScreen() {
             );
           })}
         </View>
+      </View>
+
+      {/* Calendar heatmap — always shown */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Calendrier — 3 mois</Text>
+        <CalendarHeatmap data={calendarData} />
       </View>
 
       {!hasData ? (

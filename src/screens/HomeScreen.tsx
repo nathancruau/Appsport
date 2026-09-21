@@ -9,7 +9,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
-import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings, getPausedWorkout } from '../database/database';
+import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings, getPausedWorkout, getTrainingStreak } from '../database/database';
 import { formatDate, formatDuration } from '../utils/calculations';
 import { useAuth } from '../context/AuthContext';
 import { version } from '../../package.json';
@@ -28,13 +28,14 @@ export default function HomeScreen({ navigation }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [appSettings, setAppSettings] = useState<RestTimerSettings>({ enabled: true, durationSeconds: 90, showRPE: true });
   const [hasPausedWorkout, setHasPausedWorkout] = useState(false);
+  const [streak, setStreak] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       setLoading(true);
-      Promise.all([getRecentWorkouts(10), getTemplates(), getRestTimerSettings(), getPausedWorkout()]).then(([data, tmpl, settings, paused]) => {
-        if (active) { setWorkouts(data); setTemplates(tmpl); setAppSettings(settings); setHasPausedWorkout(!!paused); setLoading(false); }
+      Promise.all([getRecentWorkouts(10), getTemplates(), getRestTimerSettings(), getPausedWorkout(), getTrainingStreak()]).then(([data, tmpl, settings, paused, str]) => {
+        if (active) { setWorkouts(data); setTemplates(tmpl); setAppSettings(settings); setHasPausedWorkout(!!paused); setStreak(str); setLoading(false); }
       });
       return () => { active = false; };
     }, [])
@@ -64,32 +65,35 @@ export default function HomeScreen({ navigation }: Props) {
     <TouchableOpacity
       style={styles.card}
       onPress={() => navigation.navigate('WorkoutDetail', { workoutId: item.id })}
-      activeOpacity={0.7}
+      activeOpacity={0.75}
     >
-      <View style={styles.cardRow}>
-        <View>
-          <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
-          <Text style={styles.cardTitle}>{item.name ?? 'Séance'}</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
-      </View>
-      <View style={styles.cardStats}>
-        <View style={styles.statChip}>
-          <Ionicons name="barbell-outline" size={13} color={theme.colors.primary} />
-          <Text style={styles.statText}>{item.exerciseCount} exercice{item.exerciseCount > 1 ? 's' : ''}</Text>
-        </View>
-        {item.totalVolume > 0 && (
-          <View style={styles.statChip}>
-            <Ionicons name="trending-up-outline" size={13} color={theme.colors.primary} />
-            <Text style={styles.statText}>{item.totalVolume.toLocaleString('fr')} kg</Text>
+      <View style={styles.cardAccent} />
+      <View style={styles.cardInner}>
+        <View style={styles.cardRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
+            <Text style={styles.cardTitle}>{item.name ?? 'Séance'}</Text>
           </View>
-        )}
-        {item.duration != null && (
+          <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
+        </View>
+        <View style={styles.cardStats}>
           <View style={styles.statChip}>
-            <Ionicons name="time-outline" size={13} color={theme.colors.primary} />
-            <Text style={styles.statText}>{formatDuration(item.duration * 60)}</Text>
+            <Ionicons name="barbell-outline" size={12} color={theme.colors.primary} />
+            <Text style={styles.statText}>{item.exerciseCount} ex.</Text>
           </View>
-        )}
+          {item.totalVolume > 0 && (
+            <View style={styles.statChip}>
+              <Ionicons name="trending-up-outline" size={12} color={theme.colors.primary} />
+              <Text style={styles.statText}>{(item.totalVolume / 1000).toFixed(1)}t</Text>
+            </View>
+          )}
+          {item.duration != null && (
+            <View style={styles.statChip}>
+              <Ionicons name="time-outline" size={12} color={theme.colors.primary} />
+              <Text style={styles.statText}>{formatDuration(item.duration * 60)}</Text>
+            </View>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -103,11 +107,18 @@ export default function HomeScreen({ navigation }: Props) {
           <Text style={styles.greeting}>
             {user ? `Bonjour ${user.displayName?.split(' ')[0] ?? ''} 💪` : 'Bonjour 💪'}
           </Text>
-          <Text style={styles.subtitle}>
-            {thisWeekCount > 0
-              ? `${thisWeekCount} séance${thisWeekCount > 1 ? 's' : ''} cette semaine`
-              : 'Prêt pour une séance ?'}
-          </Text>
+          <View style={styles.subtitleRow}>
+            <Text style={styles.subtitle}>
+              {thisWeekCount > 0
+                ? `${thisWeekCount} séance${thisWeekCount > 1 ? 's' : ''} cette semaine`
+                : 'Prêt pour une séance ?'}
+            </Text>
+            {streak >= 2 && (
+              <View style={styles.streakChip}>
+                <Text style={styles.streakText}>🔥 {streak} sem.</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.versionText}>v{version}</Text>
         </View>
         {user ? (
@@ -279,6 +290,15 @@ export default function HomeScreen({ navigation }: Props) {
           {user && (
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Compte</Text>
+              <View style={styles.settingsRow}>
+                <View style={styles.syncIndicator}>
+                  <View style={styles.syncDotSmall} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.settingsRowLabel}>Synchronisé avec Google</Text>
+                  <Text style={styles.settingsRowSub}>Tes données sont sauvegardées dans le cloud</Text>
+                </View>
+              </View>
               <TouchableOpacity
                 style={[styles.settingsRow, { borderBottomWidth: 0 }]}
                 onPress={async () => { setShowSettings(false); await signOut(); }}
@@ -298,7 +318,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background, paddingHorizontal: theme.spacing.md },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: theme.spacing.sm },
   greeting: { fontSize: 26, fontWeight: '700', color: theme.colors.text },
-  subtitle: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 2 },
+  subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  subtitle: { fontSize: 14, color: theme.colors.textSecondary },
+  streakChip: { backgroundColor: '#FFF3E0', borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3 },
+  streakText: { fontSize: 12, fontWeight: '700', color: '#E65100' },
   versionText: { fontSize: 11, color: theme.colors.textMuted, marginTop: 4 },
   avatarBtn: { position: 'relative', marginTop: 4 },
   avatar: { width: 36, height: 36, borderRadius: 18 },
@@ -338,13 +361,18 @@ const styles = StyleSheet.create({
   templateChipMain: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingRight: 2 },
   templateChipText: { fontSize: 11, fontWeight: '600', color: theme.colors.text },
   // Cards
-  card: { backgroundColor: theme.colors.card, borderRadius: theme.radius.md, padding: theme.spacing.md, marginBottom: theme.spacing.sm },
+  card: {
+    backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
+    marginBottom: theme.spacing.sm, flexDirection: 'row', overflow: 'hidden',
+  },
+  cardAccent: { width: 4, backgroundColor: theme.colors.primary + 'CC' },
+  cardInner: { flex: 1, padding: theme.spacing.md },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
-  cardDate: { fontSize: 12, color: theme.colors.textMuted, textTransform: 'capitalize', marginBottom: 2 },
-  cardTitle: { fontSize: 16, fontWeight: '600', color: theme.colors.text },
-  cardStats: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  statChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.colors.surface, borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3 },
-  statText: { fontSize: 12, color: theme.colors.textSecondary },
+  cardDate: { fontSize: 11, color: theme.colors.textMuted, textTransform: 'capitalize', marginBottom: 2 },
+  cardTitle: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
+  cardStats: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  statChip: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: theme.colors.primary + '14', borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 3 },
+  statText: { fontSize: 11, color: theme.colors.primary, fontWeight: '600' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: theme.colors.text, marginTop: 16, marginBottom: 8 },
   emptyText: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 20 },
@@ -385,6 +413,8 @@ const styles = StyleSheet.create({
   },
   settingsRowLabel: { fontSize: 15, color: theme.colors.text, fontWeight: '500' },
   settingsRowSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  syncIndicator: { width: 28, alignItems: 'center', justifyContent: 'center' },
+  syncDotSmall: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#34C759' },
   toggle: { width: 44, height: 26, borderRadius: 13, backgroundColor: theme.colors.border, justifyContent: 'center', paddingHorizontal: 2 },
   toggleOn: { backgroundColor: theme.colors.primary },
   toggleThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } },

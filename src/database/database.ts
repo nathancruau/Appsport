@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Exercise, Workout, WorkoutSet, PersonalRecord, WorkoutTemplate, BestSet } from '../types';
 import { estimateOneRM } from '../utils/calculations';
@@ -601,6 +601,9 @@ export async function getPausedWorkout(): Promise<any | null> {
 
 export async function clearPausedWorkout(): Promise<void> {
   await AsyncStorage.removeItem(KEY_PAUSED_WORKOUT);
+  if (_cloudUid) {
+    deleteDoc(doc(db, 'users', _cloudUid, 'storage', KEY_PAUSED_WORKOUT)).catch(() => {});
+  }
 }
 
 // ─── Muscle heatmap ───────────────────────────────────────────────────────────
@@ -624,6 +627,48 @@ export async function getWeekMuscleActivity(): Promise<Record<string, number>> {
     }
   }
   return result;
+}
+
+// ─── Calendar heatmap ─────────────────────────────────────────────────────────
+
+export async function getTrainingCalendar(): Promise<{ date: string; volume: number; count: number }[]> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - 3);
+  const dayMap = new Map<string, { volume: number; count: number }>();
+  for (const w of workouts) {
+    if (new Date(w.date) < cutoff) continue;
+    const vol = w.exercises.flatMap((ex) => ex.sets)
+      .filter((s) => s.completed && !s.isWarmup && s.reps != null && s.weight != null)
+      .reduce((sum, s) => sum + s.reps! * s.weight!, 0);
+    const prev = dayMap.get(w.date) ?? { volume: 0, count: 0 };
+    dayMap.set(w.date, { volume: prev.volume + Math.round(vol), count: prev.count + 1 });
+  }
+  return [...dayMap.entries()].map(([date, data]) => ({ date, ...data }));
+}
+
+// ─── Streak ───────────────────────────────────────────────────────────────────
+
+export async function getTrainingStreak(): Promise<number> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  if (workouts.length === 0) return 0;
+  const getMonday = (d: Date): string => {
+    const result = new Date(d);
+    const day = result.getDay();
+    result.setDate(result.getDate() + (day === 0 ? -6 : 1 - day));
+    return result.toISOString().slice(0, 10);
+  };
+  const weekSet = new Set(workouts.map((w) => getMonday(new Date(w.date))));
+  let streak = 0;
+  const today = new Date();
+  for (let i = 0; i <= 52; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i * 7);
+    if (weekSet.has(getMonday(d))) { streak++; }
+    else if (i === 0) { /* semaine en cours peut-être pas encore commencée */ }
+    else { break; }
+  }
+  return streak;
 }
 
 // ─── CSV Export ───────────────────────────────────────────────────────────────
