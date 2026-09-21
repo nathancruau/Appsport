@@ -3,7 +3,7 @@ export interface Exercise {
   name: string;
   muscleGroup: string;
   exerciseType: 'strength' | 'cardio' | 'bodyweight';
-  trackingType?: 'weight' | 'time';
+  trackingType?: 'weight' | 'time' | 'weight+time';
   isDefault?: boolean;
   createdAt: string;
 }

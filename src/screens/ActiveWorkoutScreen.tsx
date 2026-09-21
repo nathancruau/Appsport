@@ -208,7 +208,6 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
   const [allExercises, setAllExercises] = useState<Exercise[]>([]);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
-  const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
 
   // Rest timer
@@ -368,9 +367,9 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
               exercises: state.exercises.map((ae) => ({
                 exerciseId: ae.exercise.id,
                 sets: ae.sets.map((s) => ({
-                  reps: ae.exercise.trackingType === 'time' ? null : (s.reps ? Number(s.reps) : null),
+                  reps: (ae.exercise.trackingType === 'time' || ae.exercise.trackingType === 'weight+time') ? null : (s.reps ? Number(s.reps) : null),
                   weight: ae.exercise.trackingType === 'time' ? null : (s.weight ? Number(s.weight.replace(',', '.')) : null),
-                  duration: ae.exercise.trackingType === 'time' ? (s.duration ? Number(s.duration) : null) : null,
+                  duration: (ae.exercise.trackingType === 'time' || ae.exercise.trackingType === 'weight+time') ? (s.duration ? Number(s.duration) : null) : null,
                   isWarmup: s.isWarmup,
                   completed: s.completed,
                   rpe: s.rpe ? Number(s.rpe) : null,
@@ -514,7 +513,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                     onRemoveExercise={() => dispatch({ type: 'REMOVE_EXERCISE', index: ei })}
                     onMoveUp={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'up' })}
                     onMoveDown={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'down' })}
-                    onToggleSuperset={() => dispatch({ type: 'TOGGLE_SUPERSET', index: ei })}
+                    onToggleSuperset={() => dispatch({ type: 'TOGGLE_SUPERSET', index: ei + 1 })}
                     showRPE={restSettings.showRPE ?? true}
                   />
                 </React.Fragment>
@@ -704,13 +703,13 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
             <View style={styles.alertBox}>
               <Text style={styles.alertTitle}>{alertModal.title}</Text>
               {!!alertModal.message && <Text style={styles.alertMessage}>{alertModal.message}</Text>}
-              <View style={[styles.alertButtons, alertModal.buttons.length > 1 && { flexDirection: 'row' }]}>
+              <View style={[styles.alertButtons, alertModal.buttons.length === 2 && { flexDirection: 'row' }]}>
                 {alertModal.buttons.map((btn, i) => (
                   <TouchableOpacity
                     key={i}
                     style={[
                       styles.alertBtn,
-                      alertModal.buttons.length > 1 && { flex: 1 },
+                      alertModal.buttons.length === 2 && { flex: 1 },
                       btn.style === 'destructive' && styles.alertBtnDestructive,
                       btn.style === 'cancel' && styles.alertBtnCancel,
                     ]}
@@ -819,13 +818,13 @@ function ExerciseBlock({
           </Text>
         </View>
         <View style={styles.exHeaderActions}>
-          {!isFirst && (
+          {!isLast && (
             <TouchableOpacity
               onPress={onToggleSuperset}
-              style={[styles.ssBtn, ae.isSuperset && styles.ssBtnActive]}
+              style={[styles.ssBtn, isTopOfSuperset && styles.ssBtnActive]}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Text style={[styles.ssBtnText, ae.isSuperset && styles.ssBtnTextActive]}>SS</Text>
+              <Text style={[styles.ssBtnText, isTopOfSuperset && styles.ssBtnTextActive]}>SS</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={onMoveUp} disabled={isFirst} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -866,6 +865,11 @@ function ExerciseBlock({
         <Text style={[styles.setCell, { flex: 1 }]}>Précédent</Text>
         {ae.exercise.trackingType === 'time' ? (
           <Text style={[styles.setCell, { flex: 1, textAlign: 'center' }]}>Durée (s)</Text>
+        ) : ae.exercise.trackingType === 'weight+time' ? (
+          <>
+            <Text style={[styles.setCell, { width: 62, textAlign: 'center' }]}>kg</Text>
+            <Text style={[styles.setCell, { width: 70, textAlign: 'center' }]}>Durée (s)</Text>
+          </>
         ) : (
           <>
             <Text style={[styles.setCell, { width: 72, textAlign: 'center' }]}>kg</Text>
@@ -883,6 +887,10 @@ function ExerciseBlock({
           if (ae.exercise.trackingType === 'time') {
             const curr = Number(s.duration), prevD = prev.duration ?? 0;
             if (curr > 0 && prevD > 0) compColor = curr > prevD ? '#34C759' : curr < prevD ? '#FF3B30' : null;
+          } else if (ae.exercise.trackingType === 'weight+time') {
+            const curr = Number(s.weight) * Number(s.duration);
+            const prevV = (prev.weight ?? 0) * (prev.duration ?? 0);
+            if (curr > 0 && prevV > 0) compColor = curr > prevV ? '#34C759' : curr < prevV ? '#FF3B30' : null;
           } else {
             const currVol = Number(s.weight) * Number(s.reps);
             const prevVol = (prev.weight ?? 0) * (prev.reps ?? 0);
@@ -897,6 +905,8 @@ function ExerciseBlock({
                 <Text style={styles.setPrev}>
                   {ae.exercise.trackingType === 'time'
                     ? (prev?.duration != null ? `${prev.duration}s` : '—')
+                    : ae.exercise.trackingType === 'weight+time'
+                    ? (prev ? `${prev.weight ?? '?'}kg·${prev.duration ?? '?'}s` : '—')
                     : (prev ? `${prev.weight}×${prev.reps}` : '—')}
                 </Text>
                 {ae.exercise.trackingType === 'time' ? (
@@ -909,6 +919,27 @@ function ExerciseBlock({
                     placeholderTextColor={theme.colors.textMuted}
                     selectTextOnFocus
                   />
+                ) : ae.exercise.trackingType === 'weight+time' ? (
+                  <>
+                    <TextInput
+                      style={[styles.setInput, { width: 62 }]}
+                      value={s.weight}
+                      onChangeText={(v) => onUpdateSet(si, 'weight', v)}
+                      keyboardType="decimal-pad"
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                      selectTextOnFocus
+                    />
+                    <TextInput
+                      style={[styles.setInput, { width: 70 }]}
+                      value={s.duration}
+                      onChangeText={(v) => onUpdateSet(si, 'duration', v)}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                      selectTextOnFocus
+                    />
+                  </>
                 ) : (
                   <>
                     <TextInput

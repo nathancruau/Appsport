@@ -232,6 +232,11 @@ export default function WorkoutDetailScreen() {
                 <Text style={[styles.setCell, { width: 28 }]}>#</Text>
                 {ex.trackingType === 'time' ? (
                   <Text style={[styles.setCell, { flex: 1 }]}>Durée</Text>
+                ) : ex.trackingType === 'weight+time' ? (
+                  <>
+                    <Text style={[styles.setCell, { flex: 1 }]}>Poids</Text>
+                    <Text style={[styles.setCell, { flex: 1 }]}>Durée</Text>
+                  </>
                 ) : (
                   <>
                     <Text style={[styles.setCell, { flex: 1 }]}>Poids</Text>
@@ -247,6 +252,11 @@ export default function WorkoutDetailScreen() {
                   <Text style={styles.setNum}>{s.isWarmup ? 'E' : i + 1 - warmupSets.filter((_, wi) => wi < i).length}</Text>
                   {ex.trackingType === 'time' ? (
                     <Text style={[styles.setValue, { flex: 2 }]}>{s.duration != null ? `${s.duration}s` : '—'}</Text>
+                  ) : ex.trackingType === 'weight+time' ? (
+                    <>
+                      <Text style={styles.setValue}>{s.weight != null ? `${formatWeight(s.weight)} kg` : '—'}</Text>
+                      <Text style={styles.setValue}>{s.duration != null ? `${s.duration}s` : '—'}</Text>
+                    </>
                   ) : (
                     <>
                       <Text style={styles.setValue}>{s.weight != null ? `${formatWeight(s.weight)} kg` : '—'}</Text>
@@ -283,6 +293,11 @@ export default function WorkoutDetailScreen() {
               <Text style={[styles.editCell, { width: 32 }]}>#</Text>
               {editModal.ex.trackingType === 'time' ? (
                 <Text style={[styles.editCell, { flex: 1 }]}>Durée (s)</Text>
+              ) : editModal.ex.trackingType === 'weight+time' ? (
+                <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+                  <Text style={[styles.editCell, { flex: 1 }]}>Poids (kg)</Text>
+                  <Text style={[styles.editCell, { flex: 1 }]}>Durée (s)</Text>
+                </View>
               ) : (
                 <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
                   <Text style={[styles.editCell, { flex: 1 }]}>Poids (kg)</Text>
@@ -305,6 +320,31 @@ export default function WorkoutDetailScreen() {
                     placeholderTextColor={theme.colors.textMuted}
                     selectTextOnFocus
                   />
+                ) : editModal!.ex.trackingType === 'weight+time' ? (
+                  <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+                    <TextInput
+                      style={[styles.editInput, { flex: 1, minWidth: 0 }]}
+                      value={s.weight}
+                      onChangeText={(v) => setEditModal((prev) => prev ? {
+                        ...prev, sets: prev.sets.map((x, xi) => xi === i ? { ...x, weight: v } : x),
+                      } : null)}
+                      keyboardType="decimal-pad"
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                      selectTextOnFocus
+                    />
+                    <TextInput
+                      style={[styles.editInput, { flex: 1, minWidth: 0 }]}
+                      value={s.duration}
+                      onChangeText={(v) => setEditModal((prev) => prev ? {
+                        ...prev, sets: prev.sets.map((x, xi) => xi === i ? { ...x, duration: v } : x),
+                      } : null)}
+                      keyboardType="number-pad"
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                      selectTextOnFocus
+                    />
+                  </View>
                 ) : (
                   <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
                     <TextInput
@@ -443,7 +483,7 @@ export default function WorkoutDetailScreen() {
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.exRow} onPress={() => addNewExercise(item)} activeOpacity={0.7}>
                 <Text style={styles.exRowName}>{item.name}</Text>
-                {item.trackingType === 'time' && (
+                {(item.trackingType === 'time' || item.trackingType === 'weight+time') && (
                   <Ionicons name="timer-outline" size={14} color={theme.colors.textMuted} />
                 )}
               </TouchableOpacity>

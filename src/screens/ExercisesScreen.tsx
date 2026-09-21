@@ -24,11 +24,11 @@ export default function ExercisesScreen() {
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
   const [newMuscle, setNewMuscle] = useState('chest');
-  const [newTracking, setNewTracking] = useState<'weight' | 'time'>('weight');
+  const [newTracking, setNewTracking] = useState<'weight' | 'time' | 'weight+time'>('weight');
   const [editTarget, setEditTarget] = useState<Exercise | null>(null);
   const [editName, setEditName] = useState('');
   const [editMuscle, setEditMuscle] = useState('chest');
-  const [editTracking, setEditTracking] = useState<'weight' | 'time'>('weight');
+  const [editTracking, setEditTracking] = useState<'weight' | 'time' | 'weight+time'>('weight');
   const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
 
   useFocusEffect(
@@ -105,7 +105,7 @@ export default function ExercisesScreen() {
   const FormOverlay = ({ title, name, setName, muscle, setMuscle, tracking, setTracking, onSave, onCancel, saveLabel }: {
     title: string; name: string; setName: (v: string) => void;
     muscle: string; setMuscle: (v: string) => void;
-    tracking: 'weight' | 'time'; setTracking: (v: 'weight' | 'time') => void;
+    tracking: 'weight' | 'time' | 'weight+time'; setTracking: (v: 'weight' | 'time' | 'weight+time') => void;
     onSave: () => void; onCancel: () => void; saveLabel: string;
   }) => (
     <View style={[StyleSheet.absoluteFillObject, styles.overlay, { paddingTop: Math.max(insets.top, 16) }]}>
@@ -133,7 +133,7 @@ export default function ExercisesScreen() {
         <View style={styles.formGroup}>
           <Text style={styles.label}>Type de suivi</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            {(['weight', 'time'] as const).map((t) => (
+            {(['weight', 'time', 'weight+time'] as const).map((t) => (
               <TouchableOpacity
                 key={t}
                 style={[styles.muscleChip, tracking === t && { backgroundColor: theme.colors.primary }]}
@@ -141,7 +141,7 @@ export default function ExercisesScreen() {
               >
                 <Ionicons name={t === 'weight' ? 'barbell-outline' : 'timer-outline'} size={14} color={tracking === t ? '#fff' : theme.colors.text} />
                 <Text style={[styles.muscleChipText, tracking === t && { color: '#fff' }]}>
-                  {t === 'weight' ? 'Poids / reps' : 'Temps (s)'}
+                  {t === 'weight' ? 'Poids / reps' : t === 'time' ? 'Temps (s)' : 'Poids + Temps'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -211,7 +211,7 @@ export default function ExercisesScreen() {
               activeOpacity={0.7}
             >
               <Text style={styles.rowName}>{item.name}</Text>
-              {item.trackingType === 'time' && (
+              {(item.trackingType === 'time' || item.trackingType === 'weight+time') && (
                 <Ionicons name="timer-outline" size={14} color={theme.colors.textMuted} style={{ marginRight: 4 }} />
               )}
               <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
