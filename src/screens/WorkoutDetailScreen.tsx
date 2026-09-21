@@ -12,7 +12,9 @@ import {
   getWorkoutDetail, WorkoutExerciseDetail, deleteWorkout, saveTemplate,
   updateWorkoutSets, renameWorkout, addSetsToWorkoutExercise,
   addExerciseToWorkout, getAllExercises,
+  getLastExerciseNote, addExerciseNote,
 } from '../database/database';
+import { ExerciseNote } from '../types';
 import { formatDateFull, formatDuration, muscleGroupLabel, formatWeight } from '../utils/calculations';
 
 type Route = RouteProp<RootStackParamList, 'WorkoutDetail'>;
@@ -36,6 +38,11 @@ export default function WorkoutDetailScreen() {
     ex: WorkoutExerciseDetail;
     sets: { id: number; weight: string; reps: string; duration: string }[];
   } | null>(null);
+  const [noteModal, setNoteModal] = useState<{
+    exerciseId: number; exerciseName: string; lastNote: ExerciseNote | null;
+  } | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [noteDate, setNoteDate] = useState('');
 
   const load = async () => {
     const [detail, allEx] = await Promise.all([
@@ -87,16 +94,29 @@ export default function WorkoutDetailScreen() {
     });
   };
 
+  const openNoteModal = async (ex: WorkoutExerciseDetail, workoutDate: string) => {
+    const last = await getLastExerciseNote(ex.exerciseId);
+    setNoteText('');
+    setNoteDate(workoutDate);
+    setNoteModal({ exerciseId: ex.exerciseId, exerciseName: ex.exerciseName, lastNote: last });
+  };
+
+  const saveNote = async () => {
+    if (!noteModal || !noteText.trim()) return;
+    await addExerciseNote(noteModal.exerciseId, noteDate, noteText.trim());
+    setNoteModal(null);
+  };
+
   const saveEdit = async () => {
     if (!editModal) return;
     const existing = editModal.sets.filter((s) => s.id > 0).map((s) => ({
       id: s.id,
-      weight: s.weight ? Number(s.weight) : null,
+      weight: s.weight ? Number(s.weight.replace(',', '.')) : null,
       reps: s.reps ? Number(s.reps) : null,
       duration: s.duration ? Number(s.duration) : null,
     }));
     const newSets = editModal.sets.filter((s) => s.id <= 0).map((s) => ({
-      weight: s.weight ? Number(s.weight) : null,
+      weight: s.weight ? Number(s.weight.replace(',', '.')) : null,
       reps: s.reps ? Number(s.reps) : null,
       duration: s.duration ? Number(s.duration) : null,
     }));
@@ -222,6 +242,9 @@ export default function WorkoutDetailScreen() {
                   </View>
                   {vol > 0 && <Text style={styles.exVol}>{Math.round(vol).toLocaleString('fr')} kg</Text>}
                   <Ionicons name="chevron-forward" size={14} color={theme.colors.textMuted} style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => openNoteModal(ex, workout!.date)} style={styles.editBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="document-text-outline" size={18} color={theme.colors.textMuted} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => openEdit(ex)} style={styles.editBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Ionicons name="create-outline" size={18} color={theme.colors.primary} />
@@ -371,6 +394,15 @@ export default function WorkoutDetailScreen() {
                     />
                   </View>
                 )}
+                <TouchableOpacity
+                  onPress={() => setEditModal((prev) => prev && prev.sets.length > 1 ? {
+                    ...prev, sets: prev.sets.filter((_, xi) => xi !== i),
+                  } : prev)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ paddingLeft: 4 }}
+                >
+                  <Ionicons name="remove-circle" size={18} color={theme.colors.error + '88'} />
+                </TouchableOpacity>
               </View>
             ))}
             {/* Add set button */}
@@ -491,6 +523,51 @@ export default function WorkoutDetailScreen() {
             contentContainerStyle={{ paddingBottom: 40 }}
             stickySectionHeadersEnabled
           />
+        </View>
+      )}
+
+      {/* Note Overlay */}
+      {noteModal && (
+        <View style={[StyleSheet.absoluteFillObject, styles.overlay]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setNoteModal(null)}>
+              <Text style={styles.cancelText}>Annuler</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle} numberOfLines={1}>{noteModal.exerciseName}</Text>
+            <TouchableOpacity onPress={saveNote}>
+              <Text style={[styles.cancelText, { color: noteText.trim() ? theme.colors.primary : theme.colors.textMuted, fontWeight: '700' }]}>Sauvegarder</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }} contentContainerStyle={{ padding: theme.spacing.md, gap: 16 }}>
+            {noteModal.lastNote && (
+              <View style={styles.noteLastCard}>
+                <Text style={styles.noteLastLabel}>Dernière note — {noteModal.lastNote.date}</Text>
+                <Text style={styles.noteLastText}>{noteModal.lastNote.text}</Text>
+              </View>
+            )}
+            <View>
+              <Text style={styles.label}>Date</Text>
+              <TextInput
+                style={styles.input}
+                value={noteDate}
+                onChangeText={setNoteDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={theme.colors.textMuted}
+              />
+            </View>
+            <View>
+              <Text style={styles.label}>Note</Text>
+              <TextInput
+                style={[styles.input, { minHeight: 100, textAlignVertical: 'top' }]}
+                value={noteText}
+                onChangeText={setNoteText}
+                placeholder="Ex : bonne séance, augmenter le poids..."
+                placeholderTextColor={theme.colors.textMuted}
+                multiline
+                autoFocus
+              />
+            </View>
+          </ScrollView>
         </View>
       )}
 
@@ -622,4 +699,10 @@ const styles = StyleSheet.create({
   alertBtn: { paddingVertical: 12, borderRadius: theme.radius.md, backgroundColor: theme.colors.inputBackground, alignItems: 'center' },
   alertBtnDestructive: { backgroundColor: '#FFF0F0' },
   alertBtnText: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
+  noteLastCard: {
+    backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.md,
+    padding: 12, borderLeftWidth: 3, borderLeftColor: theme.colors.primary, marginBottom: 8,
+  },
+  noteLastLabel: { fontSize: 11, color: theme.colors.textMuted, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  noteLastText: { fontSize: 14, color: theme.colors.text, lineHeight: 20 },
 });
