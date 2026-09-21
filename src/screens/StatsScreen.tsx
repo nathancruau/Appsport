@@ -33,67 +33,77 @@ function buildMonthWeeks(year: number, month: number): (Date | null)[][] {
   return weeks;
 }
 
-function CalendarHeatmap({ data }: { data: { date: string; volume: number; count: number }[] }) {
+function CalendarHeatmap({
+  data, year, month, onPrev, onNext, onDayPress,
+}: {
+  data: { date: string; volume: number; count: number; workoutId: number }[];
+  year: number; month: number;
+  onPrev: () => void; onNext: () => void;
+  onDayPress: (workoutId: number) => void;
+}) {
   const dayMap = new Map(data.map((d) => [d.date, d]));
   const maxVol = data.length > 0 ? Math.max(...data.map((d) => d.volume)) : 1;
   const cellSize = Math.floor((width - 32 - 6 * 2) / 7);
-
-  const today = new Date();
-  const months = [2, 1, 0].map((offset) => {
-    const d = new Date(today.getFullYear(), today.getMonth() - offset, 1);
-    return { year: d.getFullYear(), month: d.getMonth() };
-  });
+  const weeks = buildMonthWeeks(year, month);
+  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const isNewest = year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth());
 
   return (
-    <View style={{ gap: 20 }}>
-      {months.map(({ year, month }) => {
-        const weeks = buildMonthWeeks(year, month);
-        return (
-          <View key={`${year}-${month}`}>
-            <Text style={calStyles.monthLabel}>{MONTH_NAMES[month]} {year}</Text>
-            <View style={calStyles.dayHeaders}>
-              {DAY_LABELS.map((d, i) => (
-                <View key={i} style={[calStyles.cell, { width: cellSize, height: 20 }]}>
-                  <Text style={calStyles.dayLabel}>{d}</Text>
-                </View>
-              ))}
-            </View>
-            {weeks.map((week, wi) => (
-              <View key={wi} style={calStyles.weekRow}>
-                {week.map((day, di) => {
-                  if (!day) return <View key={di} style={[calStyles.cell, { width: cellSize, height: cellSize }]} />;
-                  const dateStr = day.toISOString().slice(0, 10);
-                  const entry = dayMap.get(dateStr);
-                  const isToday = dateStr === today.toISOString().slice(0, 10);
-                  const opacity = entry ? Math.max(0.25, entry.volume / maxVol) : 0;
-                  return (
-                    <View
-                      key={di}
-                      style={[
-                        calStyles.cell,
-                        { width: cellSize, height: cellSize },
-                        calStyles.dayCell,
-                        entry ? { backgroundColor: `rgba(26, 26, 26, ${opacity})` } : null,
-                        isToday ? calStyles.todayCell : null,
-                      ]}
-                    >
-                      <Text style={[calStyles.dayNum, entry ? calStyles.dayNumActive : null, isToday ? calStyles.dayNumToday : null]}>
-                        {day.getDate()}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            ))}
+    <View>
+      <View style={calStyles.navRow}>
+        <TouchableOpacity onPress={onPrev} style={calStyles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
+        </TouchableOpacity>
+        <Text style={calStyles.monthLabel}>{MONTH_NAMES[month]} {year}</Text>
+        <TouchableOpacity onPress={onNext} disabled={isNewest} style={calStyles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name="chevron-forward" size={18} color={isNewest ? theme.colors.textMuted + '40' : theme.colors.text} />
+        </TouchableOpacity>
+      </View>
+      <View style={calStyles.dayHeaders}>
+        {DAY_LABELS.map((d, i) => (
+          <View key={i} style={[calStyles.cell, { width: cellSize, height: 20 }]}>
+            <Text style={calStyles.dayLabel}>{d}</Text>
           </View>
-        );
-      })}
+        ))}
+      </View>
+      {weeks.map((week, wi) => (
+        <View key={wi} style={calStyles.weekRow}>
+          {week.map((day, di) => {
+            if (!day) return <View key={di} style={[calStyles.cell, { width: cellSize, height: cellSize }]} />;
+            const dateStr = day.toISOString().slice(0, 10);
+            const entry = dayMap.get(dateStr);
+            const isToday = dateStr === today;
+            const opacity = entry ? Math.max(0.25, entry.volume / maxVol) : 0;
+            return (
+              <TouchableOpacity
+                key={di}
+                style={[
+                  calStyles.cell,
+                  { width: cellSize, height: cellSize },
+                  calStyles.dayCell,
+                  entry ? { backgroundColor: `rgba(26, 26, 26, ${opacity})` } : null,
+                  isToday ? calStyles.todayCell : null,
+                ]}
+                onPress={() => entry && onDayPress(entry.workoutId)}
+                activeOpacity={entry ? 0.7 : 1}
+              >
+                <Text style={[calStyles.dayNum, entry ? calStyles.dayNumActive : null, isToday ? calStyles.dayNumToday : null]}>
+                  {day.getDate()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ))}
     </View>
   );
 }
 
 const calStyles = StyleSheet.create({
-  monthLabel: { fontSize: 13, fontWeight: '700', color: '#1A1A1A', marginBottom: 8, textTransform: 'capitalize' },
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  navBtn: { padding: 4 },
+  monthLabel: { fontSize: 14, fontWeight: '700', color: theme.colors.text, textTransform: 'capitalize' },
   dayHeaders: { flexDirection: 'row', gap: 2, marginBottom: 2 },
   dayLabel: { fontSize: 9, fontWeight: '700', color: '#999', textAlign: 'center' },
   weekRow: { flexDirection: 'row', gap: 2, marginBottom: 2 },
@@ -114,8 +124,13 @@ export default function StatsScreen() {
   const [muscleActivity, setMuscleActivity] = useState<Record<string, number>>({});
   const [muscleVolume, setMuscleVolume] = useState<Record<string, number>>({});
   const [prTimeline, setPrTimeline] = useState<PREvent[]>([]);
-  const [calendarData, setCalendarData] = useState<{ date: string; volume: number; count: number }[]>([]);
+  const [calendarData, setCalendarData] = useState<{ date: string; volume: number; count: number; workoutId: number }[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const now = new Date();
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calMonth, setCalMonth] = useState({ year: now.getFullYear(), month: now.getMonth() });
+  const [showAllPR, setShowAllPR] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -167,6 +182,11 @@ export default function StatsScreen() {
     }
   };
 
+  const navigateCalMonth = (dir: -1 | 1) => {
+    const d = new Date(calMonth.year, calMonth.month + dir, 1);
+    setCalMonth({ year: d.getFullYear(), month: d.getMonth() });
+  };
+
   // Chart data — last 8 weeks
   const chartWeeks = weeklyVol.slice(-8);
   const chartData = chartWeeks.length >= 2 ? {
@@ -188,6 +208,8 @@ export default function StatsScreen() {
   // Muscle heatmap data
   const MUSCLE_GROUPS = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core', 'cardio', 'other'] as const;
   const maxSets = Math.max(...MUSCLE_GROUPS.map((mg) => muscleActivity[mg] ?? 0), 1);
+
+  const visiblePR = showAllPR ? prTimeline : prTimeline.slice(0, 10);
 
   return (
     <ScrollView
@@ -222,10 +244,25 @@ export default function StatsScreen() {
         </View>
       </View>
 
-      {/* Calendar heatmap — always shown */}
+      {/* Calendar — toggle button */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Calendrier — 3 mois</Text>
-        <CalendarHeatmap data={calendarData} />
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionTitle}>Calendrier</Text>
+          <TouchableOpacity onPress={() => setShowCalendar(!showCalendar)} style={styles.toggleBtn}>
+            <Text style={styles.toggleBtnText}>{showCalendar ? 'Masquer' : 'Afficher'}</Text>
+            <Ionicons name={showCalendar ? 'chevron-up' : 'chevron-down'} size={13} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        {showCalendar && (
+          <CalendarHeatmap
+            data={calendarData}
+            year={calMonth.year}
+            month={calMonth.month}
+            onPrev={() => navigateCalMonth(-1)}
+            onNext={() => navigateCalMonth(1)}
+            onDayPress={(workoutId) => navigation.navigate('WorkoutDetail', { workoutId })}
+          />
+        )}
       </View>
 
       {!hasData ? (
@@ -300,31 +337,6 @@ export default function StatsScreen() {
             </View>
           )}
 
-          {/* PR Timeline */}
-          {prTimeline.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Historique des records</Text>
-              {prTimeline.map((ev, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.timelineRow}
-                  onPress={() => navigation.navigate('ExerciseDetail', { exerciseId: ev.exerciseId, exerciseName: ev.exerciseName })}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.timelineDot, { backgroundColor: muscleColors[ev.muscleGroup] ?? '#888' }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.timelineName}>{ev.exerciseName}</Text>
-                    <Text style={styles.timelineDate}>{formatDate(ev.date)}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                    <Text style={styles.timelineSet}>{ev.weight} kg × {ev.reps}</Text>
-                    <Text style={styles.timelineOrm}>1RM ≈ {ev.oneRM} kg</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
           {/* Personal Records */}
           {prs.length > 0 && (
             <View style={styles.section}>
@@ -357,6 +369,39 @@ export default function StatsScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
+              ))}
+            </View>
+          )}
+
+          {/* PR Timeline — bottom, max 10, expand button */}
+          {prTimeline.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>Historique des records</Text>
+                {prTimeline.length > 10 && (
+                  <TouchableOpacity onPress={() => setShowAllPR(!showAllPR)} style={styles.toggleBtn}>
+                    <Text style={styles.toggleBtnText}>{showAllPR ? 'Réduire' : `Voir tout (${prTimeline.length})`}</Text>
+                    <Ionicons name={showAllPR ? 'chevron-up' : 'chevron-down'} size={13} color={theme.colors.textSecondary} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {visiblePR.map((ev, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.timelineRow}
+                  onPress={() => navigation.navigate('ExerciseDetail', { exerciseId: ev.exerciseId, exerciseName: ev.exerciseName })}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.timelineDot, { backgroundColor: muscleColors[ev.muscleGroup] ?? '#888' }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.timelineName}>{ev.exerciseName}</Text>
+                    <Text style={styles.timelineDate}>{formatDate(ev.date)}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                    <Text style={styles.timelineSet}>{ev.weight} kg × {ev.reps}</Text>
+                    <Text style={styles.timelineOrm}>1RM ≈ {ev.oneRM} kg</Text>
+                  </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
@@ -394,6 +439,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: theme.spacing.sm,
   },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: theme.spacing.sm },
+  toggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2 },
+  toggleBtnText: { fontSize: 12, color: theme.colors.textSecondary, fontWeight: '600' },
   chartNote: { fontSize: 11, color: theme.colors.textMuted, textAlign: 'center', marginTop: 4 },
   prGroup: {
     backgroundColor: theme.colors.card,

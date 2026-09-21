@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Exercise, Workout, WorkoutSet, PersonalRecord, WorkoutTemplate, BestSet } from '../types';
+import { Exercise, Workout, WorkoutSet, PersonalRecord, WorkoutTemplate, BestSet, ExerciseNote } from '../types';
 import { estimateOneRM } from '../utils/calculations';
 
 // ─── ID generator ─────────────────────────────────────────────────────────────
@@ -23,7 +23,7 @@ async function pushKeyToCloud(key: string, serialized: string): Promise<void> {
 }
 
 export async function loadFromCloud(uid: string): Promise<void> {
-  const keys = [KEY_EXERCISES, KEY_WORKOUTS, KEY_TEMPLATES, KEY_REST_TIMER];
+  const keys = [KEY_EXERCISES, KEY_WORKOUTS, KEY_TEMPLATES, KEY_REST_TIMER, KEY_EXERCISE_NOTES];
   await Promise.all(keys.map(async (key) => {
     try {
       const snap = await getDoc(doc(db, 'users', uid, 'storage', key));
@@ -46,6 +46,7 @@ const KEY_WORKOUTS = 'workouts';
 const KEY_TEMPLATES = 'templates';
 const KEY_REST_TIMER = 'restTimerSettings';
 const KEY_PAUSED_WORKOUT = 'pausedWorkout';
+const KEY_EXERCISE_NOTES = 'exerciseNotes';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -631,20 +632,37 @@ export async function getWeekMuscleActivity(): Promise<Record<string, number>> {
 
 // ─── Calendar heatmap ─────────────────────────────────────────────────────────
 
-export async function getTrainingCalendar(): Promise<{ date: string; volume: number; count: number }[]> {
+export async function getTrainingCalendar(): Promise<{ date: string; volume: number; count: number; workoutId: number }[]> {
   const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
   const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - 3);
-  const dayMap = new Map<string, { volume: number; count: number }>();
+  cutoff.setMonth(cutoff.getMonth() - 4);
+  const dayMap = new Map<string, { volume: number; count: number; workoutId: number }>();
   for (const w of workouts) {
     if (new Date(w.date) < cutoff) continue;
     const vol = w.exercises.flatMap((ex) => ex.sets)
       .filter((s) => s.completed && !s.isWarmup && s.reps != null && s.weight != null)
       .reduce((sum, s) => sum + s.reps! * s.weight!, 0);
-    const prev = dayMap.get(w.date) ?? { volume: 0, count: 0 };
-    dayMap.set(w.date, { volume: prev.volume + Math.round(vol), count: prev.count + 1 });
+    const prev = dayMap.get(w.date);
+    dayMap.set(w.date, { volume: (prev?.volume ?? 0) + Math.round(vol), count: (prev?.count ?? 0) + 1, workoutId: w.id });
   }
   return [...dayMap.entries()].map(([date, data]) => ({ date, ...data }));
+}
+
+// ─── Exercise notes ───────────────────────────────────────────────────────────
+
+export async function getExerciseNotes(exerciseId: number): Promise<ExerciseNote[]> {
+  const notes = await getJSON<ExerciseNote[]>(KEY_EXERCISE_NOTES, []);
+  return notes.filter((n) => n.exerciseId === exerciseId).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function addExerciseNote(exerciseId: number, date: string, text: string): Promise<void> {
+  const notes = await getJSON<ExerciseNote[]>(KEY_EXERCISE_NOTES, []);
+  await setJSON(KEY_EXERCISE_NOTES, [...notes, { id: nextId(), exerciseId, date, text }]);
+}
+
+export async function getLastExerciseNote(exerciseId: number): Promise<ExerciseNote | null> {
+  const notes = await getExerciseNotes(exerciseId);
+  return notes[0] ?? null;
 }
 
 // ─── Streak ───────────────────────────────────────────────────────────────────

@@ -14,7 +14,9 @@ import {
   getExerciseBest, saveTemplate,
   getRestTimerSettings, saveRestTimerSettings, RestTimerSettings,
   savePausedWorkout, getPausedWorkout, clearPausedWorkout,
+  getLastExerciseNote, addExerciseNote,
 } from '../database/database';
+import { ExerciseNote } from '../types';
 import { formatDuration, todayISO, muscleGroupLabel, estimateOneRM } from '../utils/calculations';
 
 const SUPERSET_COLOR = '#3B9EFF';
@@ -249,6 +251,13 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
   // Workout summary
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
 
+  // Note modal
+  const [noteModal, setNoteModal] = useState<{
+    exerciseId: number; exerciseName: string; lastNote: ExerciseNote | null;
+  } | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [noteDate, setNoteDate] = useState('');
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -417,6 +426,19 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     Alert.alert('Template sauvegardé', `"${name}" accessible depuis l'accueil.`);
   };
 
+  const openNoteModal = async (ae: ActiveExercise) => {
+    const last = await getLastExerciseNote(ae.exercise.id);
+    setNoteText('');
+    setNoteDate(todayISO());
+    setNoteModal({ exerciseId: ae.exercise.id, exerciseName: ae.exercise.name, lastNote: last });
+  };
+
+  const saveNote = async () => {
+    if (!noteModal || !noteText.trim()) return;
+    await addExerciseNote(noteModal.exerciseId, noteDate || todayISO(), noteText.trim());
+    setNoteModal(null);
+  };
+
   const updateRestSettings = async (s: RestTimerSettings) => {
     setRestSettings(s);
     await saveRestTimerSettings(s);
@@ -514,6 +536,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                     onMoveUp={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'up' })}
                     onMoveDown={() => dispatch({ type: 'MOVE_EXERCISE', index: ei, direction: 'down' })}
                     onToggleSuperset={() => dispatch({ type: 'TOGGLE_SUPERSET', index: ei + 1 })}
+                    onNotePress={() => openNoteModal(ae)}
                     showRPE={restSettings.showRPE ?? true}
                   />
                 </React.Fragment>
@@ -726,6 +749,55 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
         </Modal>
       )}
 
+      {/* Note Modal */}
+      {noteModal && (
+        <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setNoteModal(null)}>
+                <Text style={styles.cancelText}>Annuler</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle} numberOfLines={1}>{noteModal.exerciseName}</Text>
+              <TouchableOpacity onPress={saveNote}>
+                <Text style={[styles.cancelText, { color: noteText.trim() ? theme.colors.text : theme.colors.textMuted, fontWeight: '700' }]}>Sauvegarder</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
+              <View style={{ padding: theme.spacing.md, gap: 16 }}>
+                {noteModal.lastNote && (
+                  <View style={styles.noteLastCard}>
+                    <Text style={styles.noteLastLabel}>Dernière note — {noteModal.lastNote.date}</Text>
+                    <Text style={styles.noteLastText}>{noteModal.lastNote.text}</Text>
+                  </View>
+                )}
+                <View>
+                  <Text style={styles.settingSubLabel}>Date</Text>
+                  <TextInput
+                    style={styles.templateInput}
+                    value={noteDate}
+                    onChangeText={setNoteDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+                <View>
+                  <Text style={styles.settingSubLabel}>Note</Text>
+                  <TextInput
+                    style={[styles.templateInput, { minHeight: 100, textAlignVertical: 'top' }]}
+                    value={noteText}
+                    onChangeText={setNoteText}
+                    placeholder="Ex : bonne séance, augmenter le poids la prochaine fois..."
+                    placeholderTextColor={theme.colors.textMuted}
+                    multiline
+                    autoFocus
+                  />
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </Modal>
+      )}
+
       {/* Workout Summary Modal */}
       {summaryData && (
         <Modal visible={true} animationType="slide" presentationStyle="pageSheet">
@@ -774,7 +846,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 function ExerciseBlock({
   ae, ei, isFirst, isLast, isTopOfSuperset, supersetPartnerName,
   onAddSet, onDuplicateSet, onRemoveSet, onUpdateSet, onUpdateRPE, onToggleComplete,
-  onRemoveExercise, onMoveUp, onMoveDown, onToggleSuperset, showRPE,
+  onRemoveExercise, onMoveUp, onMoveDown, onToggleSuperset, onNotePress, showRPE,
 }: {
   ae: ActiveExercise; ei: number;
   isFirst: boolean; isLast: boolean;
@@ -790,6 +862,7 @@ function ExerciseBlock({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onToggleSuperset: () => void;
+  onNotePress: () => void;
   showRPE: boolean;
 }) {
   const prevWorking = ae.previousSets.filter((s) => !s.isWarmup && s.completed);
@@ -832,6 +905,9 @@ function ExerciseBlock({
           </TouchableOpacity>
           <TouchableOpacity onPress={onMoveDown} disabled={isLast} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="chevron-down" size={16} color={isLast ? theme.colors.textMuted + '40' : theme.colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onNotePress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="document-text-outline" size={16} color={theme.colors.textMuted} />
           </TouchableOpacity>
           <TouchableOpacity onPress={onRemoveExercise} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="trash-outline" size={16} color={theme.colors.textMuted} />
@@ -1183,6 +1259,14 @@ const styles = StyleSheet.create({
   alertBtnDestructive: { backgroundColor: '#FFF0F0' },
   alertBtnText: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
   alertBtnDestructiveText: { color: theme.colors.error },
+
+  // Note modal
+  noteLastCard: {
+    backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.md,
+    padding: 12, borderLeftWidth: 3, borderLeftColor: theme.colors.primary,
+  },
+  noteLastLabel: { fontSize: 11, color: theme.colors.textMuted, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  noteLastText: { fontSize: 14, color: theme.colors.text, lineHeight: 20 },
 
   // Summary modal
   summaryModal: {

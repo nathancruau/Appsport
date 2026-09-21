@@ -4,8 +4,8 @@ import { RouteProp, useRoute } from '@react-navigation/native';
 import { LineChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
-import { RootStackParamList, WorkoutSet } from '../types';
-import { getExerciseHistory } from '../database/database';
+import { RootStackParamList, WorkoutSet, ExerciseNote } from '../types';
+import { getExerciseHistory, getExerciseNotes } from '../database/database';
 import { formatDate, formatWeight, estimateOneRM } from '../utils/calculations';
 
 type Route = RouteProp<RootStackParamList, 'ExerciseDetail'>;
@@ -25,11 +25,16 @@ interface HistoryEntry {
 export default function ExerciseDetailScreen() {
   const { params } = useRoute<Route>();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [notes, setNotes] = useState<ExerciseNote[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getExerciseHistory(params.exerciseId).then((data) => {
+    Promise.all([
+      getExerciseHistory(params.exerciseId),
+      getExerciseNotes(params.exerciseId),
+    ]).then(([data, noteData]) => {
       setHistory(data);
+      setNotes(noteData);
       setLoading(false);
     });
   }, [params.exerciseId]);
@@ -138,6 +143,22 @@ export default function ExerciseDetailScreen() {
           </View>
         ))}
       </View>
+
+      {/* Notes */}
+      {notes.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notes ({notes.length})</Text>
+          {notes.map((note) => (
+            <View key={note.id} style={styles.noteCard}>
+              <View style={styles.noteHeader}>
+                <Ionicons name="document-text-outline" size={13} color={theme.colors.textMuted} />
+                <Text style={styles.noteDate}>{note.date}</Text>
+              </View>
+              <Text style={styles.noteText}>{note.text}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -205,4 +226,12 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
   },
   histVol: { fontSize: 12, color: theme.colors.textMuted, marginTop: 4 },
+  noteCard: {
+    backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
+    padding: 12, marginBottom: theme.spacing.sm,
+    borderLeftWidth: 3, borderLeftColor: theme.colors.primary,
+  },
+  noteHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
+  noteDate: { fontSize: 11, color: theme.colors.textMuted, fontWeight: '600' },
+  noteText: { fontSize: 14, color: theme.colors.text, lineHeight: 20 },
 });

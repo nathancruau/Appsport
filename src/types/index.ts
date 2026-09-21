@@ -77,6 +77,13 @@ export interface WorkoutTemplate {
   createdAt: string;
 }
 
+export interface ExerciseNote {
+  id: number;
+  exerciseId: number;
+  date: string;
+  text: string;
+}
+
 export interface ActiveWorkout {
   name: string;
   startTime: Date;
