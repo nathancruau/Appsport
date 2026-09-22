@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { theme, muscleColors } from '../theme';
-import { Exercise, ActiveExercise, ActiveSet, WorkoutSet, BestSet } from '../types';
+import { Exercise, ActiveExercise, ActiveSet, WorkoutSet, BestSet, CARDIO_FIELDS } from '../types';
 import {
   getAllExercises, getLastWorkoutSets, saveWorkout,
   getExerciseBest, saveTemplate,
@@ -38,7 +38,7 @@ type Action =
   | { type: 'ADD_SET'; ei: number }
   | { type: 'DUPLICATE_SET'; ei: number }
   | { type: 'REMOVE_SET'; ei: number; si: number }
-  | { type: 'UPDATE_SET'; ei: number; si: number; field: 'reps' | 'weight' | 'duration'; value: string }
+  | { type: 'UPDATE_SET'; ei: number; si: number; field: string; value: string }
   | { type: 'UPDATE_RPE'; ei: number; si: number; value: string }
   | { type: 'TOGGLE_COMPLETE'; ei: number; si: number }
   | { type: 'MOVE_EXERCISE'; index: number; direction: 'up' | 'down' }
@@ -63,6 +63,7 @@ function makeEmptySet(prev?: WorkoutSet): ActiveSet {
     isWarmup: false,
     completed: false,
     rpe: '',
+    cardioData: {},
   };
 }
 
@@ -109,7 +110,12 @@ function reducer(state: State, action: Action): State {
       const exs = [...state.exercises];
       const ex = { ...exs[action.ei] };
       const sets = [...ex.sets];
-      sets[action.si] = { ...sets[action.si], [action.field]: action.value };
+      const isCardioField = !['reps', 'weight', 'duration', 'isWarmup', 'completed', 'rpe'].includes(action.field);
+      if (isCardioField) {
+        sets[action.si] = { ...sets[action.si], cardioData: { ...(sets[action.si].cardioData ?? {}), [action.field]: action.value } };
+      } else {
+        sets[action.si] = { ...sets[action.si], [action.field]: action.value };
+      }
       ex.sets = sets;
       exs[action.ei] = ex;
       return { ...state, exercises: exs };
@@ -339,7 +345,8 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     dispatch({ type: 'TOGGLE_COMPLETE', ei, si });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (completing) {
-      if (ae.exercise.trackingType !== 'time') {
+      const isCardio = (ae.exercise.cardioFields?.length ?? 0) > 0 || ae.exercise.muscleGroup === 'cardio';
+      if (!isCardio && ae.exercise.trackingType !== 'time') {
         const w = Number(set.weight), r = Number(set.reps);
         if (w > 0 && r > 0) {
           const newORM = estimateOneRM(w, r);
@@ -373,17 +380,40 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
               name: state.name.trim() || null,
               date: todayISO(),
               duration: Math.round(state.elapsedSeconds / 60),
-              exercises: state.exercises.map((ae) => ({
-                exerciseId: ae.exercise.id,
-                sets: ae.sets.map((s) => ({
-                  reps: (ae.exercise.trackingType === 'time' || ae.exercise.trackingType === 'weight+time') ? null : (s.reps ? Number(s.reps) : null),
-                  weight: ae.exercise.trackingType === 'time' ? null : (s.weight ? Number(s.weight.replace(',', '.')) : null),
-                  duration: (ae.exercise.trackingType === 'time' || ae.exercise.trackingType === 'weight+time') ? (s.duration ? Number(s.duration) : null) : null,
-                  isWarmup: s.isWarmup,
-                  completed: s.completed,
-                  rpe: s.rpe ? Number(s.rpe) : null,
-                })),
-              })),
+              exercises: state.exercises.map((ae) => {
+                const isCardio = (ae.exercise.cardioFields?.length ?? 0) > 0 || ae.exercise.muscleGroup === 'cardio';
+                return {
+                  exerciseId: ae.exercise.id,
+                  sets: ae.sets.map((s) => {
+                    if (isCardio) {
+                      const cd = s.cardioData ?? {};
+                      return {
+                        reps: null,
+                        weight: null,
+                        duration: cd.duration ? Number(cd.duration) : null,
+                        isWarmup: s.isWarmup,
+                        completed: s.completed,
+                        rpe: s.rpe ? Number(s.rpe) : null,
+                        distance: cd.distance ? Number(cd.distance) : null,
+                        speed: cd.speed ? Number(cd.speed) : null,
+                        elevation: cd.elevation ? Number(cd.elevation) : null,
+                        calories: cd.calories ? Number(cd.calories) : null,
+                        steps: cd.steps ? Number(cd.steps) : null,
+                        power: cd.power ? Number(cd.power) : null,
+                        heartRate: cd.heartRate ? Number(cd.heartRate) : null,
+                      };
+                    }
+                    return {
+                      reps: (ae.exercise.trackingType === 'time' || ae.exercise.trackingType === 'weight+time') ? null : (s.reps ? Number(s.reps) : null),
+                      weight: ae.exercise.trackingType === 'time' ? null : (s.weight ? Number(s.weight.replace(',', '.')) : null),
+                      duration: (ae.exercise.trackingType === 'time' || ae.exercise.trackingType === 'weight+time') ? (s.duration ? Number(s.duration) : null) : null,
+                      isWarmup: s.isWarmup,
+                      completed: s.completed,
+                      rpe: s.rpe ? Number(s.rpe) : null,
+                    };
+                  }),
+                };
+              }),
             });
             await clearPausedWorkout();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -855,7 +885,7 @@ function ExerciseBlock({
   onAddSet: () => void;
   onDuplicateSet: () => void;
   onRemoveSet: (si: number) => void;
-  onUpdateSet: (si: number, field: 'reps' | 'weight' | 'duration', value: string) => void;
+  onUpdateSet: (si: number, field: string, value: string) => void;
   onUpdateRPE: (si: number, value: string) => void;
   onToggleComplete: (si: number) => void;
   onRemoveExercise: () => void;
@@ -868,6 +898,7 @@ function ExerciseBlock({
   const prevWorking = ae.previousSets.filter((s) => !s.isWarmup && s.completed);
   const muscleColor = muscleColors[ae.exercise.muscleGroup] ?? '#888';
   const inSuperset = ae.isSuperset || isTopOfSuperset;
+  const isCardio = !!ae.exercise.cardioFields?.length;
 
   // Double-tap detection for "add set"
   const lastTapRef = useRef(0);
@@ -930,31 +961,33 @@ function ExerciseBlock({
         </View>
       )}
 
-      {ae.bestSet && ae.exercise.trackingType !== 'time' && (
+      {!isCardio && ae.bestSet && ae.exercise.trackingType !== 'time' && (
         <Text style={styles.bestLabel}>
           Record : {ae.bestSet.weight} kg × {ae.bestSet.reps} reps · 1RM ≈ {ae.bestSet.oneRM} kg
         </Text>
       )}
 
-      <View style={styles.setHeader}>
-        <Text style={[styles.setCell, { width: 28 }]}>#</Text>
-        <Text style={[styles.setCell, { flex: 1 }]}>Précédent</Text>
-        {ae.exercise.trackingType === 'time' ? (
-          <Text style={[styles.setCell, { flex: 1, textAlign: 'center' }]}>Durée (s)</Text>
-        ) : ae.exercise.trackingType === 'weight+time' ? (
-          <>
-            <Text style={[styles.setCell, { width: 62, textAlign: 'center' }]}>kg</Text>
-            <Text style={[styles.setCell, { width: 70, textAlign: 'center' }]}>Durée (s)</Text>
-          </>
-        ) : (
-          <>
-            <Text style={[styles.setCell, { width: 72, textAlign: 'center' }]}>kg</Text>
-            <Text style={[styles.setCell, { width: 60, textAlign: 'center' }]}>Reps</Text>
-          </>
-        )}
-        <Text style={[styles.setCell, { width: 36 }]}> </Text>
-        <Text style={[styles.setCell, { width: 24 }]}> </Text>
-      </View>
+      {!(ae.exercise.cardioFields?.length) && (
+        <View style={styles.setHeader}>
+          <Text style={[styles.setCell, { width: 28 }]}>#</Text>
+          <Text style={[styles.setCell, { flex: 1 }]}>Précédent</Text>
+          {ae.exercise.trackingType === 'time' ? (
+            <Text style={[styles.setCell, { flex: 1, textAlign: 'center' }]}>Durée (s)</Text>
+          ) : ae.exercise.trackingType === 'weight+time' ? (
+            <>
+              <Text style={[styles.setCell, { width: 62, textAlign: 'center' }]}>kg</Text>
+              <Text style={[styles.setCell, { width: 70, textAlign: 'center' }]}>Durée (s)</Text>
+            </>
+          ) : (
+            <>
+              <Text style={[styles.setCell, { width: 72, textAlign: 'center' }]}>kg</Text>
+              <Text style={[styles.setCell, { width: 60, textAlign: 'center' }]}>Reps</Text>
+            </>
+          )}
+          <Text style={[styles.setCell, { width: 36 }]}> </Text>
+          <Text style={[styles.setCell, { width: 24 }]}> </Text>
+        </View>
+      )}
 
       {ae.sets.map((s, si) => {
         const prev = prevWorking[si];
@@ -973,41 +1006,57 @@ function ExerciseBlock({
             if (currVol > 0 && prevVol > 0) compColor = currVol > prevVol ? '#34C759' : currVol < prevVol ? '#FF3B30' : null;
           }
         }
+        const cardioFields = ae.exercise.cardioFields;
         return (
           <React.Fragment key={si}>
             <SwipeableRow onDelete={() => onRemoveSet(si)}>
-              <View style={[styles.setRow, s.completed && styles.setRowDone, compColor ? { borderLeftWidth: 3, borderLeftColor: compColor } : null]}>
-                <Text style={[styles.setNum, s.completed && styles.setNumDone]}>{si + 1}</Text>
-                <Text style={styles.setPrev}>
-                  {ae.exercise.trackingType === 'time'
-                    ? (prev?.duration != null ? `${prev.duration}s` : '—')
-                    : ae.exercise.trackingType === 'weight+time'
-                    ? (prev ? `${prev.weight ?? '?'}kg·${prev.duration ?? '?'}s` : '—')
-                    : (prev ? `${prev.weight}×${prev.reps}` : '—')}
-                </Text>
-                {ae.exercise.trackingType === 'time' ? (
-                  <TextInput
-                    style={[styles.setInput, { flex: 1 }]}
-                    value={s.duration}
-                    onChangeText={(v) => onUpdateSet(si, 'duration', v)}
-                    keyboardType="number-pad"
-                    placeholder="0"
-                    placeholderTextColor={theme.colors.textMuted}
-                    selectTextOnFocus
-                  />
-                ) : ae.exercise.trackingType === 'weight+time' ? (
-                  <>
+              {cardioFields?.length ? (
+                <View style={[styles.cardioSetBlock, s.completed && styles.setRowDone]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={[styles.setNum, s.completed && styles.setNumDone]}>{si + 1}</Text>
+                    <View style={{ flex: 1 }} />
+                    <TouchableOpacity onPress={() => onToggleComplete(si)} style={[styles.checkBtn, s.completed && styles.checkBtnDone]}>
+                      <Ionicons name={s.completed ? 'checkmark' : 'ellipse-outline'} size={18} color={s.completed ? '#fff' : theme.colors.textMuted} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => onRemoveSet(si)} style={styles.deleteSetBtn} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
+                      <Ionicons name="remove-circle" size={16} color={theme.colors.error + '55'} />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.cardioFieldsGrid}>
+                    {cardioFields.map((key) => {
+                      const fieldMeta = CARDIO_FIELDS.find((f) => f.key === key);
+                      if (!fieldMeta) return null;
+                      const isDecimal = ['distance', 'speed', 'elevation'].includes(key);
+                      return (
+                        <View key={key} style={styles.cardioFieldItem}>
+                          <Text style={styles.cardioFieldLabel}>{fieldMeta.label}{fieldMeta.unit ? ` (${fieldMeta.unit})` : ''}</Text>
+                          <TextInput
+                            style={styles.cardioFieldInput}
+                            value={s.cardioData?.[key] ?? ''}
+                            onChangeText={(v) => onUpdateSet(si, key, v)}
+                            keyboardType={isDecimal ? 'decimal-pad' : 'number-pad'}
+                            placeholder="0"
+                            placeholderTextColor={theme.colors.textMuted}
+                            selectTextOnFocus
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : (
+                <View style={[styles.setRow, s.completed && styles.setRowDone, compColor ? { borderLeftWidth: 3, borderLeftColor: compColor } : null]}>
+                  <Text style={[styles.setNum, s.completed && styles.setNumDone]}>{si + 1}</Text>
+                  <Text style={styles.setPrev}>
+                    {ae.exercise.trackingType === 'time'
+                      ? (prev?.duration != null ? `${prev.duration}s` : '—')
+                      : ae.exercise.trackingType === 'weight+time'
+                      ? (prev ? `${prev.weight ?? '?'}kg·${prev.duration ?? '?'}s` : '—')
+                      : (prev ? `${prev.weight}×${prev.reps}` : '—')}
+                  </Text>
+                  {ae.exercise.trackingType === 'time' ? (
                     <TextInput
-                      style={[styles.setInput, { width: 62 }]}
-                      value={s.weight}
-                      onChangeText={(v) => onUpdateSet(si, 'weight', v)}
-                      keyboardType="decimal-pad"
-                      placeholder="0"
-                      placeholderTextColor={theme.colors.textMuted}
-                      selectTextOnFocus
-                    />
-                    <TextInput
-                      style={[styles.setInput, { width: 70 }]}
+                      style={[styles.setInput, { flex: 1 }]}
                       value={s.duration}
                       onChangeText={(v) => onUpdateSet(si, 'duration', v)}
                       keyboardType="number-pad"
@@ -1015,42 +1064,63 @@ function ExerciseBlock({
                       placeholderTextColor={theme.colors.textMuted}
                       selectTextOnFocus
                     />
-                  </>
-                ) : (
-                  <>
-                    <TextInput
-                      style={[styles.setInput, { width: 72 }]}
-                      value={s.weight}
-                      onChangeText={(v) => onUpdateSet(si, 'weight', v)}
-                      keyboardType="decimal-pad"
-                      placeholder="0"
-                      placeholderTextColor={theme.colors.textMuted}
-                      selectTextOnFocus
-                    />
-                    <TextInput
-                      style={[styles.setInput, { width: 60 }]}
-                      value={s.reps}
-                      onChangeText={(v) => onUpdateSet(si, 'reps', v)}
-                      keyboardType="number-pad"
-                      placeholder="0"
-                      placeholderTextColor={theme.colors.textMuted}
-                      selectTextOnFocus
-                    />
-                  </>
-                )}
-                <TouchableOpacity onPress={() => onToggleComplete(si)} style={[styles.checkBtn, s.completed && styles.checkBtnDone]}>
-                  <Ionicons name={s.completed ? 'checkmark' : 'ellipse-outline'} size={18} color={s.completed ? '#fff' : theme.colors.textMuted} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => onRemoveSet(si)}
-                  style={styles.deleteSetBtn}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-                >
-                  <Ionicons name="remove-circle" size={16} color={theme.colors.error + '55'} />
-                </TouchableOpacity>
-              </View>
+                  ) : ae.exercise.trackingType === 'weight+time' ? (
+                    <>
+                      <TextInput
+                        style={[styles.setInput, { width: 62 }]}
+                        value={s.weight}
+                        onChangeText={(v) => onUpdateSet(si, 'weight', v)}
+                        keyboardType="decimal-pad"
+                        placeholder="0"
+                        placeholderTextColor={theme.colors.textMuted}
+                        selectTextOnFocus
+                      />
+                      <TextInput
+                        style={[styles.setInput, { width: 70 }]}
+                        value={s.duration}
+                        onChangeText={(v) => onUpdateSet(si, 'duration', v)}
+                        keyboardType="number-pad"
+                        placeholder="0"
+                        placeholderTextColor={theme.colors.textMuted}
+                        selectTextOnFocus
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <TextInput
+                        style={[styles.setInput, { width: 72 }]}
+                        value={s.weight}
+                        onChangeText={(v) => onUpdateSet(si, 'weight', v)}
+                        keyboardType="decimal-pad"
+                        placeholder="0"
+                        placeholderTextColor={theme.colors.textMuted}
+                        selectTextOnFocus
+                      />
+                      <TextInput
+                        style={[styles.setInput, { width: 60 }]}
+                        value={s.reps}
+                        onChangeText={(v) => onUpdateSet(si, 'reps', v)}
+                        keyboardType="number-pad"
+                        placeholder="0"
+                        placeholderTextColor={theme.colors.textMuted}
+                        selectTextOnFocus
+                      />
+                    </>
+                  )}
+                  <TouchableOpacity onPress={() => onToggleComplete(si)} style={[styles.checkBtn, s.completed && styles.checkBtnDone]}>
+                    <Ionicons name={s.completed ? 'checkmark' : 'ellipse-outline'} size={18} color={s.completed ? '#fff' : theme.colors.textMuted} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => onRemoveSet(si)}
+                    style={styles.deleteSetBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                  >
+                    <Ionicons name="remove-circle" size={16} color={theme.colors.error + '55'} />
+                  </TouchableOpacity>
+                </View>
+              )}
             </SwipeableRow>
-            {s.completed && showRPE && (
+            {s.completed && showRPE && !isCardio && (
               <View style={styles.rpeBlock}>
                 <Text style={styles.rpeLabel}>RPE</Text>
                 <View style={styles.rpeRow}>
@@ -1168,6 +1238,18 @@ const styles = StyleSheet.create({
   checkBtn: { width: 36, height: 36, flexShrink: 0, borderRadius: theme.radius.sm, backgroundColor: theme.colors.inputBackground, alignItems: 'center', justifyContent: 'center' },
   checkBtnDone: { backgroundColor: theme.colors.text },
   deleteSetBtn: { width: 24, height: 36, alignItems: 'center', justifyContent: 'center' },
+
+  cardioSetBlock: {
+    backgroundColor: theme.colors.surface, borderRadius: theme.radius.md,
+    marginVertical: 2, padding: 10, borderWidth: 1, borderColor: theme.colors.border,
+  },
+  cardioFieldsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  cardioFieldItem: { minWidth: '45%', flex: 1 },
+  cardioFieldLabel: { fontSize: 11, color: theme.colors.textMuted, marginBottom: 4, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
+  cardioFieldInput: {
+    backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.sm,
+    padding: 8, fontSize: 15, fontWeight: '600', color: theme.colors.text, textAlign: 'center',
+  },
 
   // RPE - 2 rows
   rpeBlock: { paddingHorizontal: 4, paddingBottom: 6, paddingTop: 2, gap: 4 },
