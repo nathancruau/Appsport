@@ -7,7 +7,7 @@ import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
-import { RootStackParamList, Workout, Exercise } from '../types';
+import { RootStackParamList, Workout, Exercise, CARDIO_FIELDS } from '../types';
 import {
   getWorkoutDetail, WorkoutExerciseDetail, deleteWorkout, saveTemplate,
   updateWorkoutSets, renameWorkout, addSetsToWorkoutExercise,
@@ -36,7 +36,7 @@ export default function WorkoutDetailScreen() {
   const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
   const [editModal, setEditModal] = useState<{
     ex: WorkoutExerciseDetail;
-    sets: { id: number; weight: string; reps: string; duration: string }[];
+    sets: { id: number; weight: string; reps: string; duration: string; cardioData?: Record<string, string> }[];
   } | null>(null);
   const [noteModal, setNoteModal] = useState<{
     exerciseId: number; exerciseName: string; lastNote: ExerciseNote | null;
@@ -81,6 +81,7 @@ export default function WorkoutDetailScreen() {
   };
 
   const openEdit = (ex: WorkoutExerciseDetail) => {
+    const isCardio = (ex.cardioFields?.length ?? 0) > 0;
     setEditModal({
       ex,
       sets: ex.sets
@@ -90,6 +91,9 @@ export default function WorkoutDetailScreen() {
           weight: s.weight != null ? String(s.weight) : '',
           reps: s.reps != null ? String(s.reps) : '',
           duration: s.duration != null ? String(s.duration) : '',
+          cardioData: isCardio ? Object.fromEntries(
+            CARDIO_FIELDS.map((f) => [f.key, (s as any)[f.key] != null ? String((s as any)[f.key]) : ''])
+          ) : undefined,
         })),
     });
   };
@@ -109,17 +113,30 @@ export default function WorkoutDetailScreen() {
 
   const saveEdit = async () => {
     if (!editModal) return;
-    const existing = editModal.sets.filter((s) => s.id > 0).map((s) => ({
-      id: s.id,
-      weight: s.weight ? Number(s.weight.replace(',', '.')) : null,
-      reps: s.reps ? Number(s.reps) : null,
-      duration: s.duration ? Number(s.duration) : null,
-    }));
-    const newSets = editModal.sets.filter((s) => s.id <= 0).map((s) => ({
-      weight: s.weight ? Number(s.weight.replace(',', '.')) : null,
-      reps: s.reps ? Number(s.reps) : null,
-      duration: s.duration ? Number(s.duration) : null,
-    }));
+    const isCardio = (editModal.ex.cardioFields?.length ?? 0) > 0;
+    const toSetData = (s: typeof editModal.sets[number]) => {
+      if (isCardio) {
+        const cd = s.cardioData ?? {};
+        return {
+          weight: null, reps: null,
+          duration: cd.duration ? Number(cd.duration) : null,
+          distance: cd.distance ? Number(cd.distance) : null,
+          speed: cd.speed ? Number(cd.speed) : null,
+          elevation: cd.elevation ? Number(cd.elevation) : null,
+          calories: cd.calories ? Number(cd.calories) : null,
+          steps: cd.steps ? Number(cd.steps) : null,
+          power: cd.power ? Number(cd.power) : null,
+          heartRate: cd.heartRate ? Number(cd.heartRate) : null,
+        };
+      }
+      return {
+        weight: s.weight ? Number(s.weight.replace(',', '.')) : null,
+        reps: s.reps ? Number(s.reps) : null,
+        duration: s.duration ? Number(s.duration) : null,
+      };
+    };
+    const existing = editModal.sets.filter((s) => s.id > 0).map((s) => ({ id: s.id, ...toSetData(s) }));
+    const newSets = editModal.sets.filter((s) => s.id <= 0).map((s) => toSetData(s));
     if (existing.length > 0) {
       await updateWorkoutSets(params.workoutId, editModal.ex.exerciseId, existing);
     }
@@ -251,29 +268,39 @@ export default function WorkoutDetailScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.setHeader}>
-                <Text style={[styles.setCell, { width: 28 }]}>#</Text>
-                {ex.trackingType === 'time' ? (
-                  <Text style={[styles.setCell, { flex: 1 }]}>Durée</Text>
-                ) : ex.trackingType === 'weight+time' ? (
-                  <>
-                    <Text style={[styles.setCell, { flex: 1 }]}>Poids</Text>
+              {!(ex.cardioFields?.length) && (
+                <View style={styles.setHeader}>
+                  <Text style={[styles.setCell, { width: 28 }]}>#</Text>
+                  {ex.trackingType === 'time' ? (
                     <Text style={[styles.setCell, { flex: 1 }]}>Durée</Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={[styles.setCell, { flex: 1 }]}>Poids</Text>
-                    <Text style={[styles.setCell, { flex: 1 }]}>Reps</Text>
-                  </>
-                )}
-              </View>
+                  ) : ex.trackingType === 'weight+time' ? (
+                    <>
+                      <Text style={[styles.setCell, { flex: 1 }]}>Poids</Text>
+                      <Text style={[styles.setCell, { flex: 1 }]}>Durée</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={[styles.setCell, { flex: 1 }]}>Poids</Text>
+                      <Text style={[styles.setCell, { flex: 1 }]}>Reps</Text>
+                    </>
+                  )}
+                </View>
+              )}
               {ex.sets.length === 0 && (
                 <Text style={styles.emptySetHint}>Appuie sur le crayon pour ajouter des séries</Text>
               )}
               {ex.sets.map((s, i) => (
                 <View key={s.id} style={[styles.setRow, s.isWarmup && styles.setWarmup]}>
                   <Text style={styles.setNum}>{s.isWarmup ? 'E' : i + 1 - warmupSets.filter((_, wi) => wi < i).length}</Text>
-                  {ex.trackingType === 'time' ? (
+                  {ex.cardioFields?.length ? (
+                    <Text style={[styles.setValue, { flex: 2, flexWrap: 'wrap' }]}>
+                      {ex.cardioFields.map((k) => {
+                        const val = (s as any)[k];
+                        const meta = CARDIO_FIELDS.find((f) => f.key === k);
+                        return val != null ? `${meta?.label ?? k}: ${val}${meta?.unit ? ' ' + meta.unit : ''}` : null;
+                      }).filter(Boolean).join(' · ')}
+                    </Text>
+                  ) : ex.trackingType === 'time' ? (
                     <Text style={[styles.setValue, { flex: 2 }]}>{s.duration != null ? `${s.duration}s` : '—'}</Text>
                   ) : ex.trackingType === 'weight+time' ? (
                     <>
@@ -312,26 +339,65 @@ export default function WorkoutDetailScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }} contentContainerStyle={{ padding: theme.spacing.md }}>
-            <View style={styles.editSetHeader}>
-              <Text style={[styles.editCell, { width: 32 }]}>#</Text>
-              {editModal.ex.trackingType === 'time' ? (
-                <Text style={[styles.editCell, { flex: 1 }]}>Durée (s)</Text>
-              ) : editModal.ex.trackingType === 'weight+time' ? (
-                <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
-                  <Text style={[styles.editCell, { flex: 1 }]}>Poids (kg)</Text>
+            {!(editModal.ex.cardioFields?.length) && (
+              <View style={styles.editSetHeader}>
+                <Text style={[styles.editCell, { width: 32 }]}>#</Text>
+                {editModal.ex.trackingType === 'time' ? (
                   <Text style={[styles.editCell, { flex: 1 }]}>Durée (s)</Text>
-                </View>
-              ) : (
-                <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
-                  <Text style={[styles.editCell, { flex: 1 }]}>Poids (kg)</Text>
-                  <Text style={[styles.editCell, { flex: 1 }]}>Reps</Text>
-                </View>
-              )}
-            </View>
+                ) : editModal.ex.trackingType === 'weight+time' ? (
+                  <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+                    <Text style={[styles.editCell, { flex: 1 }]}>Poids (kg)</Text>
+                    <Text style={[styles.editCell, { flex: 1 }]}>Durée (s)</Text>
+                  </View>
+                ) : (
+                  <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+                    <Text style={[styles.editCell, { flex: 1 }]}>Poids (kg)</Text>
+                    <Text style={[styles.editCell, { flex: 1 }]}>Reps</Text>
+                  </View>
+                )}
+              </View>
+            )}
             {editModal.sets.map((s, i) => (
-              <View key={`${s.id}-${i}`} style={styles.editSetRow}>
-                <Text style={styles.editSetNum}>{i + 1}</Text>
-                {editModal!.ex.trackingType === 'time' ? (
+              <View key={`${s.id}-${i}`} style={editModal!.ex.cardioFields?.length ? styles.editSetCardio : styles.editSetRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: editModal!.ex.cardioFields?.length ? 6 : 0 }}>
+                  <Text style={styles.editSetNum}>{i + 1}</Text>
+                  {editModal!.ex.cardioFields?.length ? <View style={{ flex: 1 }} /> : null}
+                  <TouchableOpacity
+                    onPress={() => setEditModal((prev) => prev && prev.sets.length > 1 ? {
+                      ...prev, sets: prev.sets.filter((_, xi) => xi !== i),
+                    } : prev)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ paddingLeft: 4 }}
+                  >
+                    <Ionicons name="remove-circle" size={18} color={theme.colors.error + '88'} />
+                  </TouchableOpacity>
+                </View>
+                {editModal!.ex.cardioFields?.length ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {editModal!.ex.cardioFields.map((key) => {
+                      const meta = CARDIO_FIELDS.find((f) => f.key === key);
+                      const isDecimal = ['distance', 'speed', 'elevation'].includes(key);
+                      return (
+                        <View key={key} style={{ minWidth: '45%', flex: 1 }}>
+                          <Text style={styles.editCell}>{meta?.label ?? key}{meta?.unit ? ` (${meta.unit})` : ''}</Text>
+                          <TextInput
+                            style={[styles.editInput, { textAlign: 'left' }]}
+                            value={s.cardioData?.[key] ?? ''}
+                            onChangeText={(v) => setEditModal((prev) => prev ? {
+                              ...prev, sets: prev.sets.map((x, xi) => xi === i ? {
+                                ...x, cardioData: { ...(x.cardioData ?? {}), [key]: v },
+                              } : x),
+                            } : null)}
+                            keyboardType={isDecimal ? 'decimal-pad' : 'number-pad'}
+                            placeholder="0"
+                            placeholderTextColor={theme.colors.textMuted}
+                            selectTextOnFocus
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : editModal!.ex.trackingType === 'time' ? (
                   <TextInput
                     style={[styles.editInput, { flex: 1 }]}
                     value={s.duration}
@@ -394,15 +460,6 @@ export default function WorkoutDetailScreen() {
                     />
                   </View>
                 )}
-                <TouchableOpacity
-                  onPress={() => setEditModal((prev) => prev && prev.sets.length > 1 ? {
-                    ...prev, sets: prev.sets.filter((_, xi) => xi !== i),
-                  } : prev)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={{ paddingLeft: 4 }}
-                >
-                  <Ionicons name="remove-circle" size={18} color={theme.colors.error + '88'} />
-                </TouchableOpacity>
               </View>
             ))}
             {/* Add set button */}
@@ -410,7 +467,9 @@ export default function WorkoutDetailScreen() {
               style={styles.addSetBtn}
               onPress={() => setEditModal((prev) => prev ? {
                 ...prev,
-                sets: [...prev.sets, { id: -Date.now(), weight: '', reps: '', duration: '' }],
+                sets: [...prev.sets, { id: -Date.now(), weight: '', reps: '', duration: '',
+                  cardioData: (prev.ex.cardioFields?.length ?? 0) > 0 ? {} : undefined,
+                }],
               } : null)}
             >
               <Ionicons name="add" size={16} color={theme.colors.textSecondary} />
@@ -658,6 +717,7 @@ const styles = StyleSheet.create({
   editSetHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
   editCell: { fontSize: 11, fontWeight: '700', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
   editSetRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  editSetCardio: { backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.md, padding: 10, marginBottom: 8 },
   editSetNum: { width: 32, fontSize: 14, fontWeight: '600', color: theme.colors.textSecondary, textAlign: 'center' },
   editInput: {
     backgroundColor: theme.colors.inputBackground, borderRadius: theme.radius.sm,

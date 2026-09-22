@@ -75,6 +75,7 @@ interface StoredWorkoutExercise {
   exerciseName: string;
   muscleGroup: string;
   trackingType?: 'weight' | 'time' | 'weight+time';
+  cardioFields?: string[];
   orderIndex: number;
   sets: WorkoutSet[];
 }
@@ -90,7 +91,7 @@ interface StoredWorkout {
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
-const SEED: [string, string, Exercise['exerciseType'], ('weight' | 'time')?][] = [
+const SEED: [string, string, Exercise['exerciseType'], ('weight' | 'time')?, string[]?][] = [
   ['Développé couché barre', 'chest', 'strength'],
   ['Développé couché haltères', 'chest', 'strength'],
   ['Développé incliné', 'chest', 'strength'],
@@ -124,21 +125,30 @@ const SEED: [string, string, Exercise['exerciseType'], ('weight' | 'time')?][] =
   ['Planche', 'core', 'bodyweight', 'time'],
   ['Ab wheel', 'core', 'bodyweight'],
   ['Relevé de jambes', 'core', 'bodyweight'],
+  ['Rameur', 'cardio', 'cardio', undefined, ['duration', 'distance', 'speed', 'calories', 'power']],
+  ['Tapis de course', 'cardio', 'cardio', undefined, ['duration', 'distance', 'speed', 'elevation', 'calories']],
+  ['Vélo elliptique', 'cardio', 'cardio', undefined, ['duration', 'distance', 'speed', 'calories', 'power']],
 ];
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 const TIME_BASED_NAMES = ['Planche'];
+const NEW_CARDIO_EXERCISES = [
+  { name: 'Rameur', cardioFields: ['duration', 'distance', 'speed', 'calories', 'power'] },
+  { name: 'Tapis de course', cardioFields: ['duration', 'distance', 'speed', 'elevation', 'calories'] },
+  { name: 'Vélo elliptique', cardioFields: ['duration', 'distance', 'speed', 'calories', 'power'] },
+];
 
 export async function initDB(): Promise<void> {
   const exercises = await getJSON<Exercise[]>(KEY_EXERCISES, []);
   if (exercises.length === 0) {
-    const seeded: Exercise[] = SEED.map(([name, muscleGroup, exerciseType, trackingType = 'weight'], i) => ({
+    const seeded: Exercise[] = SEED.map(([name, muscleGroup, exerciseType, trackingType = 'weight', cardioFields], i) => ({
       id: i + 1,
       name,
       muscleGroup,
       exerciseType,
       trackingType: trackingType as 'weight' | 'time',
+      cardioFields,
       isDefault: true,
       createdAt: new Date().toISOString(),
     }));
@@ -148,12 +158,37 @@ export async function initDB(): Promise<void> {
     const needsTrackingType = exercises.some((e) => !e.trackingType);
     const needsTimeFix = exercises.some((e) => TIME_BASED_NAMES.includes(e.name) && e.trackingType !== 'time');
     const needsIsDefault = exercises.some((e) => e.isDefault === undefined);
-    if (needsTrackingType || needsTimeFix || needsIsDefault) {
-      await setJSON(KEY_EXERCISES, exercises.map((e) => ({
+    const needsCardioSeed = NEW_CARDIO_EXERCISES.some((nc) => !exercises.some((e) => e.name === nc.name));
+    const needsCardioFields = exercises.some((e) => e.muscleGroup === 'cardio' && !e.cardioFields);
+
+    if (needsTrackingType || needsTimeFix || needsIsDefault || needsCardioSeed || needsCardioFields) {
+      let updated = exercises.map((e) => ({
         ...e,
-        isDefault: e.isDefault ?? (e.id <= SEED.length),
+        isDefault: e.isDefault ?? (e.id <= SEED.length - 3), // old seed had 33 entries, new has 36
         trackingType: TIME_BASED_NAMES.includes(e.name) ? 'time' : (e.trackingType ?? 'weight'),
-      })));
+        cardioFields: e.muscleGroup === 'cardio' && !e.cardioFields ? ['duration', 'distance'] : e.cardioFields,
+      })) as Exercise[];
+
+      if (needsCardioSeed) {
+        let nextIdVal = Math.max(...updated.map((e) => e.id), 0) + 1;
+        for (const nc of NEW_CARDIO_EXERCISES) {
+          if (!updated.some((e) => e.name === nc.name)) {
+            updated.push({
+              id: nextIdVal++,
+              name: nc.name,
+              muscleGroup: 'cardio',
+              exerciseType: 'cardio',
+              trackingType: 'time',
+              cardioFields: nc.cardioFields,
+              isDefault: true,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+        _nextId = Math.max(_nextId, nextIdVal);
+      }
+
+      await setJSON(KEY_EXERCISES, updated);
     }
   }
 }
@@ -164,7 +199,7 @@ export async function getAllExercises(): Promise<Exercise[]> {
   return getJSON<Exercise[]>(KEY_EXERCISES, []);
 }
 
-export async function createExercise(name: string, muscleGroup: string, exerciseType: string, trackingType: 'weight' | 'time' | 'weight+time' = 'weight'): Promise<Exercise> {
+export async function createExercise(name: string, muscleGroup: string, exerciseType: string, trackingType: 'weight' | 'time' | 'weight+time' = 'weight', cardioFields?: string[]): Promise<Exercise> {
   const exercises = await getAllExercises();
   const exercise: Exercise = {
     id: nextId(),
@@ -172,6 +207,7 @@ export async function createExercise(name: string, muscleGroup: string, exercise
     muscleGroup,
     exerciseType: exerciseType as Exercise['exerciseType'],
     trackingType,
+    cardioFields,
     isDefault: false,
     createdAt: new Date().toISOString(),
   };
@@ -184,7 +220,7 @@ export async function deleteExercise(id: number): Promise<void> {
   await setJSON(KEY_EXERCISES, exercises.filter((e) => e.id !== id));
 }
 
-export async function updateExercise(id: number, updates: { name?: string; muscleGroup?: string; trackingType?: 'weight' | 'time' | 'weight+time' }): Promise<void> {
+export async function updateExercise(id: number, updates: { name?: string; muscleGroup?: string; trackingType?: 'weight' | 'time' | 'weight+time'; cardioFields?: string[] }): Promise<void> {
   const exercises = await getAllExercises();
   await setJSON(KEY_EXERCISES, exercises.map((e) => e.id === id ? { ...e, ...updates } : e));
   if (updates.name || updates.trackingType) {
@@ -208,7 +244,24 @@ export async function saveWorkout(params: {
   name: string | null;
   date: string;
   duration: number;
-  exercises: { exerciseId: number; sets: { reps: number | null; weight: number | null; duration?: number | null; isWarmup: boolean; completed: boolean; rpe?: number | null }[] }[];
+  exercises: {
+    exerciseId: number;
+    sets: {
+      reps: number | null;
+      weight: number | null;
+      duration?: number | null;
+      isWarmup: boolean;
+      completed: boolean;
+      rpe?: number | null;
+      distance?: number | null;
+      speed?: number | null;
+      elevation?: number | null;
+      calories?: number | null;
+      steps?: number | null;
+      power?: number | null;
+      heartRate?: number | null;
+    }[];
+  }[];
 }): Promise<number> {
   const allExercises = await getAllExercises();
   const exMap = new Map(allExercises.map((e) => [e.id, e]));
@@ -223,6 +276,7 @@ export async function saveWorkout(params: {
       exerciseName: info?.name ?? '',
       muscleGroup: info?.muscleGroup ?? 'other',
       trackingType: info?.trackingType ?? 'weight',
+      cardioFields: info?.cardioFields,
       orderIndex: i,
       sets: ex.sets.map((s, j) => ({
         id: nextId(),
@@ -234,6 +288,13 @@ export async function saveWorkout(params: {
         isWarmup: s.isWarmup,
         completed: s.completed,
         rpe: s.rpe ?? null,
+        distance: s.distance ?? null,
+        speed: s.speed ?? null,
+        elevation: s.elevation ?? null,
+        calories: s.calories ?? null,
+        steps: s.steps ?? null,
+        power: s.power ?? null,
+        heartRate: s.heartRate ?? null,
       })),
     };
   });
@@ -284,6 +345,7 @@ export interface WorkoutExerciseDetail {
   exerciseName: string;
   muscleGroup: string;
   trackingType: 'weight' | 'time' | 'weight+time';
+  cardioFields?: string[];
   sets: WorkoutSet[];
 }
 
@@ -298,6 +360,7 @@ export async function getWorkoutDetail(workoutId: number): Promise<{ workout: Wo
       orderIndex: ex.orderIndex, exerciseName: ex.exerciseName,
       muscleGroup: ex.muscleGroup,
       trackingType: ex.trackingType ?? 'weight',
+      cardioFields: ex.cardioFields,
       sets: ex.sets,
     })),
   };
@@ -487,7 +550,7 @@ export async function deleteWorkout(workoutId: number): Promise<void> {
 export async function addSetsToWorkoutExercise(
   workoutId: number,
   exerciseId: number,
-  newSets: { weight: number | null; reps: number | null; duration?: number | null }[]
+  newSets: { weight: number | null; reps: number | null; duration?: number | null; distance?: number | null; speed?: number | null; elevation?: number | null; calories?: number | null; steps?: number | null; power?: number | null; heartRate?: number | null }[]
 ): Promise<void> {
   const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
   const wIdx = workouts.findIndex((w) => w.id === workoutId);
@@ -511,6 +574,13 @@ export async function addSetsToWorkoutExercise(
           isWarmup: false,
           completed: true,
           rpe: null,
+          distance: s.distance ?? null,
+          speed: s.speed ?? null,
+          elevation: s.elevation ?? null,
+          calories: s.calories ?? null,
+          steps: s.steps ?? null,
+          power: s.power ?? null,
+          heartRate: s.heartRate ?? null,
         })),
       ],
     };
@@ -536,6 +606,7 @@ export async function addExerciseToWorkout(workoutId: number, exerciseId: number
     exerciseName: info.name,
     muscleGroup: info.muscleGroup,
     trackingType: info.trackingType ?? 'weight',
+    cardioFields: info.cardioFields,
     orderIndex: w.exercises.length,
     sets: [],
   }];
@@ -554,7 +625,7 @@ export async function renameWorkout(workoutId: number, name: string | null): Pro
 export async function updateWorkoutSets(
   workoutId: number,
   exerciseId: number,
-  sets: { id: number; weight: number | null; reps: number | null; duration?: number | null }[]
+  sets: { id: number; weight: number | null; reps: number | null; duration?: number | null; distance?: number | null; speed?: number | null; elevation?: number | null; calories?: number | null; steps?: number | null; power?: number | null; heartRate?: number | null }[]
 ): Promise<void> {
   const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
   const wIdx = workouts.findIndex((w) => w.id === workoutId);
@@ -566,7 +637,20 @@ export async function updateWorkoutSets(
       ...ex,
       sets: ex.sets.map((s) => {
         const upd = sets.find((u) => u.id === s.id);
-        return upd ? { ...s, weight: upd.weight, reps: upd.reps, duration: upd.duration !== undefined ? upd.duration : s.duration } : s;
+        if (!upd) return s;
+        return {
+          ...s,
+          weight: upd.weight,
+          reps: upd.reps,
+          duration: upd.duration !== undefined ? upd.duration : s.duration,
+          distance: upd.distance !== undefined ? upd.distance : s.distance,
+          speed: upd.speed !== undefined ? upd.speed : s.speed,
+          elevation: upd.elevation !== undefined ? upd.elevation : s.elevation,
+          calories: upd.calories !== undefined ? upd.calories : s.calories,
+          steps: upd.steps !== undefined ? upd.steps : s.steps,
+          power: upd.power !== undefined ? upd.power : s.power,
+          heartRate: upd.heartRate !== undefined ? upd.heartRate : s.heartRate,
+        };
       }),
     };
   });

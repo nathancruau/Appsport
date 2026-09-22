@@ -1,9 +1,21 @@
+export const CARDIO_FIELDS: { key: string; label: string; unit: string }[] = [
+  { key: 'duration', label: 'Durée', unit: 'min' },
+  { key: 'distance', label: 'Distance', unit: 'km' },
+  { key: 'speed', label: 'Vitesse', unit: 'km/h' },
+  { key: 'elevation', label: 'Dénivelé', unit: '%' },
+  { key: 'calories', label: 'Calories', unit: 'kcal' },
+  { key: 'steps', label: 'Marches', unit: '' },
+  { key: 'power', label: 'Puissance', unit: 'W' },
+  { key: 'heartRate', label: 'FC', unit: 'bpm' },
+];
+
 export interface Exercise {
   id: number;
   name: string;
   muscleGroup: string;
   exerciseType: 'strength' | 'cardio' | 'bodyweight';
   trackingType?: 'weight' | 'time' | 'weight+time';
+  cardioFields?: string[];
   isDefault?: boolean;
   createdAt: string;
 }
@@ -34,6 +46,13 @@ export interface WorkoutSet {
   isWarmup: boolean;
   completed: boolean;
   rpe?: number | null;
+  distance?: number | null;
+  speed?: number | null;
+  elevation?: number | null;
+  calories?: number | null;
+  steps?: number | null;
+  power?: number | null;
+  heartRate?: number | null;
 }
 
 export interface PersonalRecord {
@@ -54,6 +73,7 @@ export interface ActiveSet {
   isWarmup: boolean;
   completed: boolean;
   rpe: string;
+  cardioData: Record<string, string>;
 }
 
 export interface BestSet {

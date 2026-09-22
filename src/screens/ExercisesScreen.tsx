@@ -8,7 +8,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, muscleColors } from '../theme';
-import { Exercise, RootStackParamList } from '../types';
+import { Exercise, RootStackParamList, CARDIO_FIELDS } from '../types';
 import { getAllExercises, createExercise, deleteExercise, updateExercise } from '../database/database';
 import { muscleGroupLabel } from '../utils/calculations';
 
@@ -25,10 +25,12 @@ export default function ExercisesScreen() {
   const [newName, setNewName] = useState('');
   const [newMuscle, setNewMuscle] = useState('chest');
   const [newTracking, setNewTracking] = useState<'weight' | 'time' | 'weight+time'>('weight');
+  const [newCardioFields, setNewCardioFields] = useState<string[]>(['duration', 'distance']);
   const [editTarget, setEditTarget] = useState<Exercise | null>(null);
   const [editName, setEditName] = useState('');
   const [editMuscle, setEditMuscle] = useState('chest');
   const [editTracking, setEditTracking] = useState<'weight' | 'time' | 'weight+time'>('weight');
+  const [editCardioFields, setEditCardioFields] = useState<string[]>(['duration', 'distance']);
   const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
 
   useFocusEffect(
@@ -61,13 +63,15 @@ export default function ExercisesScreen() {
       showAlert('Exercice déjà existant', `"${name}" est déjà dans la liste.`);
       return;
     }
-    await createExercise(name, newMuscle, 'strength', newTracking);
+    const cardioFieldsToSave = newMuscle === 'cardio' ? newCardioFields : undefined;
+    await createExercise(name, newMuscle, newMuscle === 'cardio' ? 'cardio' : 'strength', newTracking, cardioFieldsToSave);
     const updated = await getAllExercises();
     setExercises(updated);
     setShowAdd(false);
     setNewName('');
     setNewMuscle('chest');
     setNewTracking('weight');
+    setNewCardioFields(['duration', 'distance']);
   };
 
   const openEdit = (ex: Exercise) => {
@@ -75,6 +79,7 @@ export default function ExercisesScreen() {
     setEditName(ex.name);
     setEditMuscle(ex.muscleGroup);
     setEditTracking(ex.trackingType ?? 'weight');
+    setEditCardioFields(ex.cardioFields ?? ['duration', 'distance']);
   };
 
   const handleEdit = async () => {
@@ -85,10 +90,12 @@ export default function ExercisesScreen() {
       showAlert('Nom déjà utilisé', `"${name}" est déjà dans la liste.`);
       return;
     }
-    await updateExercise(editTarget.id, { name, muscleGroup: editMuscle, trackingType: editTracking });
+    const cardioFieldsToSave = editMuscle === 'cardio' ? editCardioFields : undefined;
+    await updateExercise(editTarget.id, { name, muscleGroup: editMuscle, trackingType: editTracking, cardioFields: cardioFieldsToSave });
     const updated = await getAllExercises();
     setExercises(updated);
     setEditTarget(null);
+    setEditCardioFields(['duration', 'distance']);
   };
 
   const confirmDeleteExercise = (ex: Exercise) => {
@@ -102,10 +109,14 @@ export default function ExercisesScreen() {
     ]);
   };
 
-  const FormOverlay = ({ title, name, setName, muscle, setMuscle, tracking, setTracking, onSave, onCancel, saveLabel }: {
+  const FormOverlay = ({
+    title, name, setName, muscle, setMuscle, tracking, setTracking,
+    cardioFields, setCardioFields, onSave, onCancel, saveLabel,
+  }: {
     title: string; name: string; setName: (v: string) => void;
     muscle: string; setMuscle: (v: string) => void;
     tracking: 'weight' | 'time' | 'weight+time'; setTracking: (v: 'weight' | 'time' | 'weight+time') => void;
+    cardioFields: string[]; setCardioFields: (v: string[]) => void;
     onSave: () => void; onCancel: () => void; saveLabel: string;
   }) => (
     <View style={[StyleSheet.absoluteFillObject, styles.overlay, { paddingTop: Math.max(insets.top, 16) }]}>
@@ -130,23 +141,52 @@ export default function ExercisesScreen() {
             autoFocus
           />
         </View>
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Type de suivi</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {(['weight', 'time', 'weight+time'] as const).map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.muscleChip, tracking === t && { backgroundColor: theme.colors.primary }]}
-                onPress={() => setTracking(t)}
-              >
-                <Ionicons name={t === 'weight' ? 'barbell-outline' : 'timer-outline'} size={14} color={tracking === t ? '#fff' : theme.colors.text} />
-                <Text style={[styles.muscleChipText, tracking === t && { color: '#fff' }]}>
-                  {t === 'weight' ? 'Poids / reps' : t === 'time' ? 'Temps (s)' : 'Poids + Temps'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {muscle !== 'cardio' && (
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Type de suivi</Text>
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              {(['weight', 'time', 'weight+time'] as const).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.muscleChip, tracking === t && { backgroundColor: theme.colors.primary }]}
+                  onPress={() => setTracking(t)}
+                >
+                  <Ionicons name={t === 'weight' ? 'barbell-outline' : 'timer-outline'} size={14} color={tracking === t ? '#fff' : theme.colors.text} />
+                  <Text style={[styles.muscleChipText, tracking === t && { color: '#fff' }]}>
+                    {t === 'weight' ? 'Poids / reps' : t === 'time' ? 'Temps (s)' : 'Poids + Temps'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
-        </View>
+        )}
+        {muscle === 'cardio' && (
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Champs de suivi</Text>
+            <View style={styles.muscleGrid}>
+              {CARDIO_FIELDS.map((f) => {
+                const selected = cardioFields.includes(f.key);
+                return (
+                  <TouchableOpacity
+                    key={f.key}
+                    style={[styles.muscleChip, selected && { backgroundColor: theme.colors.primary }]}
+                    onPress={() => {
+                      if (selected) {
+                        if (cardioFields.length > 1) setCardioFields(cardioFields.filter((k) => k !== f.key));
+                      } else {
+                        setCardioFields([...cardioFields, f.key]);
+                      }
+                    }}
+                  >
+                    <Text style={[styles.muscleChipText, selected && { color: '#fff' }]}>
+                      {f.label}{f.unit ? ` (${f.unit})` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
         <View style={styles.formGroup}>
           <Text style={styles.label}>Groupe musculaire</Text>
           <View style={styles.muscleGrid}>
@@ -211,9 +251,14 @@ export default function ExercisesScreen() {
               activeOpacity={0.7}
             >
               <Text style={styles.rowName}>{item.name}</Text>
-              {(item.trackingType === 'time' || item.trackingType === 'weight+time') && (
+              {item.muscleGroup === 'cardio' && item.cardioFields?.length ? (
+                <View style={styles.cardioBadge}>
+                  <Ionicons name="heart-outline" size={11} color={theme.colors.primary} />
+                  <Text style={styles.cardioBadgeText}>{item.cardioFields.length}</Text>
+                </View>
+              ) : (item.trackingType === 'time' || item.trackingType === 'weight+time') ? (
                 <Ionicons name="timer-outline" size={14} color={theme.colors.textMuted} style={{ marginRight: 4 }} />
-              )}
+              ) : null}
               <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
             </TouchableOpacity>
             {!item.isDefault && (
@@ -247,8 +292,9 @@ export default function ExercisesScreen() {
           name={newName} setName={setNewName}
           muscle={newMuscle} setMuscle={setNewMuscle}
           tracking={newTracking} setTracking={setNewTracking}
+          cardioFields={newCardioFields} setCardioFields={setNewCardioFields}
           onSave={handleAdd}
-          onCancel={() => { setShowAdd(false); setNewName(''); }}
+          onCancel={() => { setShowAdd(false); setNewName(''); setNewMuscle('chest'); setNewCardioFields(['duration', 'distance']); }}
         />
       )}
 
@@ -258,8 +304,9 @@ export default function ExercisesScreen() {
           name={editName} setName={setEditName}
           muscle={editMuscle} setMuscle={setEditMuscle}
           tracking={editTracking} setTracking={setEditTracking}
+          cardioFields={editCardioFields} setCardioFields={setEditCardioFields}
           onSave={handleEdit}
-          onCancel={() => setEditTarget(null)}
+          onCancel={() => { setEditTarget(null); setEditCardioFields(['duration', 'distance']); }}
         />
       )}
 
@@ -320,6 +367,12 @@ const styles = StyleSheet.create({
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.spacing.md, paddingVertical: 14, gap: 6 },
   rowName: { flex: 1, fontSize: 15, color: theme.colors.text },
   iconBtn: { paddingHorizontal: 10, paddingVertical: 14 },
+  cardioBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: theme.colors.primary + '18', borderRadius: theme.radius.full,
+    paddingHorizontal: 7, paddingVertical: 3, marginRight: 4,
+  },
+  cardioBadgeText: { fontSize: 11, fontWeight: '700', color: theme.colors.primary },
   overlay: { backgroundColor: theme.colors.background, zIndex: 100 },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
