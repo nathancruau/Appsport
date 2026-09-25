@@ -13,6 +13,8 @@ import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, 
 import { formatDate, formatDuration } from '../utils/calculations';
 import { useAuth } from '../context/AuthContext';
 import { version } from '../../package.json';
+import { computeFitnessLevel, FITNESS_LEVELS } from '../utils/fitnessLevel';
+import { useDynamicFavicon } from '../hooks/useDynamicFavicon';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList> };
 type WorkoutItem = Workout & { exerciseCount: number; totalVolume: number };
@@ -29,13 +31,26 @@ export default function HomeScreen({ navigation }: Props) {
   const [appSettings, setAppSettings] = useState<RestTimerSettings>({ enabled: true, durationSeconds: 90, showRPE: true });
   const [hasPausedWorkout, setHasPausedWorkout] = useState(false);
   const [streak, setStreak] = useState(0);
+  const [sessions30, setSessions30] = useState(0);
+
+  useDynamicFavicon();
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       setLoading(true);
-      Promise.all([getRecentWorkouts(10), getTemplates(), getRestTimerSettings(), getPausedWorkout(), getTrainingStreak()]).then(([data, tmpl, settings, paused, str]) => {
-        if (active) { setWorkouts(data); setTemplates(tmpl); setAppSettings(settings); setHasPausedWorkout(!!paused); setStreak(str); setLoading(false); }
+      Promise.all([getRecentWorkouts(50), getTemplates(), getRestTimerSettings(), getPausedWorkout(), getTrainingStreak()]).then(([data, tmpl, settings, paused, str]) => {
+        if (!active) return;
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 30);
+        const count30 = data.filter((w) => new Date(w.date) >= cutoff).length;
+        setWorkouts(data.slice(0, 5));
+        setTemplates(tmpl);
+        setAppSettings(settings);
+        setHasPausedWorkout(!!paused);
+        setStreak(str);
+        setSessions30(count30);
+        setLoading(false);
       });
       return () => { active = false; };
     }, [])
@@ -60,6 +75,12 @@ export default function HomeScreen({ navigation }: Props) {
     const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
     return d >= weekAgo;
   }).length;
+
+  const level = computeFitnessLevel(sessions30);
+  const nextLevel = FITNESS_LEVELS.find((l) => l.minSessions > sessions30);
+  const progressToNext = nextLevel
+    ? Math.min(1, (sessions30 - level.minSessions) / (nextLevel.minSessions - level.minSessions))
+    : 1;
 
   const renderWorkout = ({ item }: { item: WorkoutItem }) => (
     <TouchableOpacity
@@ -141,6 +162,23 @@ export default function HomeScreen({ navigation }: Props) {
             <Text style={styles.signInText}>Connexion</Text>
           </TouchableOpacity>
         )}
+      </View>
+
+      {/* Level badge */}
+      <View style={styles.levelCard}>
+        <View style={styles.levelLeft}>
+          <Text style={styles.levelEmoji}>{level.emoji}</Text>
+          <View>
+            <Text style={[styles.levelName, { color: level.color }]}>{level.label}</Text>
+            <Text style={styles.levelSub}>
+              {sessions30} séance{sessions30 !== 1 ? 's' : ''} ce mois
+              {nextLevel ? ` · ${nextLevel.minSessions - sessions30} pour ${nextLevel.label}` : ' · niveau max'}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.levelBarWrap}>
+          <View style={[styles.levelBarFill, { width: `${Math.round(progressToNext * 100)}%` as any, backgroundColor: level.color }]} />
+        </View>
       </View>
 
       {hasPausedWorkout && (
@@ -335,6 +373,19 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.card,
   },
   signInText: { fontSize: 13, fontWeight: '600', color: theme.colors.primary },
+  levelCard: {
+    backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
+    padding: 12, marginBottom: theme.spacing.sm,
+    borderWidth: 1, borderColor: theme.colors.border,
+  },
+  levelLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  levelEmoji: { fontSize: 22 },
+  levelName: { fontSize: 14, fontWeight: '700' },
+  levelSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 1 },
+  levelBarWrap: {
+    height: 4, backgroundColor: theme.colors.border, borderRadius: 2, overflow: 'hidden',
+  },
+  levelBarFill: { height: 4, borderRadius: 2 },
   startButton: {
     backgroundColor: theme.colors.primary, borderRadius: theme.radius.lg,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
