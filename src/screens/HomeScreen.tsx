@@ -33,6 +33,7 @@ export default function HomeScreen({ navigation }: Props) {
   const [streak, setStreak] = useState(0);
   const [sessions30, setSessions30] = useState(0);
   const [volume30, setVolume30] = useState(0);
+  const [showLevelInfo, setShowLevelInfo] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -145,42 +146,31 @@ export default function HomeScreen({ navigation }: Props) {
           </View>
           <Text style={styles.versionText}>v{version}</Text>
         </View>
-        {user ? (
+        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+          {user ? (
+            <TouchableOpacity style={styles.avatarBtn} onPress={() => setShowSettings(true)}>
+              {user.photoURL ? (
+                <Image source={{ uri: user.photoURL }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatar, styles.avatarFallback]}>
+                  <Text style={styles.avatarInitial}>{(user.displayName ?? user.email ?? '?')[0].toUpperCase()}</Text>
+                </View>
+              )}
+              <View style={styles.syncDot} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.signInBtn} onPress={signInWithGoogle}>
+              <Ionicons name="logo-google" size={13} color={theme.colors.primary} />
+              <Text style={styles.signInText}>Connexion</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
-            style={styles.avatarBtn}
-            onPress={() => setShowSettings(true)}
+            style={[styles.levelChip, { borderColor: level.color + '60', backgroundColor: level.color + '18' }]}
+            onPress={() => setShowLevelInfo(true)}
           >
-            {user.photoURL ? (
-              <Image source={{ uri: user.photoURL }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, styles.avatarFallback]}>
-                <Text style={styles.avatarInitial}>{(user.displayName ?? user.email ?? '?')[0].toUpperCase()}</Text>
-              </View>
-            )}
-            <View style={styles.syncDot} />
+            <Text style={styles.levelChipEmoji}>{level.emoji}</Text>
+            <Text style={[styles.levelChipText, { color: level.color }]}>{level.label}</Text>
           </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.signInBtn} onPress={signInWithGoogle}>
-            <Ionicons name="logo-google" size={13} color={theme.colors.primary} />
-            <Text style={styles.signInText}>Connexion</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Level badge */}
-      <View style={styles.levelCard}>
-        <View style={styles.levelLeft}>
-          <Text style={styles.levelEmoji}>{level.emoji}</Text>
-          <View>
-            <Text style={[styles.levelName, { color: level.color }]}>{level.label}</Text>
-            <Text style={styles.levelSub}>
-              {sessions30} séance{sessions30 !== 1 ? 's' : ''} ce mois
-              {nextLevel ? ` · ${nextLevel.minSessions - sessions30} pour ${nextLevel.label}` : ' · niveau max'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.levelBarWrap}>
-          <View style={[styles.levelBarFill, { width: `${Math.round(progressToNext * 100)}%` as any, backgroundColor: level.color }]} />
         </View>
       </View>
 
@@ -282,6 +272,63 @@ export default function HomeScreen({ navigation }: Props) {
         </Modal>
       )}
 
+      {/* Level Info Overlay */}
+      {showLevelInfo && (
+        <View style={[StyleSheet.absoluteFillObject, styles.levelInfoOverlay]}>
+          <View style={[styles.levelInfoHeader, { paddingTop: Math.max(insets.top, 16) }]}>
+            <Text style={styles.levelInfoTitle}>Progression</Text>
+            <TouchableOpacity onPress={() => setShowLevelInfo(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Ionicons name="close" size={22} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.levelInfoContent} showsVerticalScrollIndicator={false}>
+            <View style={[styles.levelInfoCard, { borderColor: level.color }]}>
+              <Text style={styles.levelInfoEmoji}>{level.emoji}</Text>
+              <Text style={[styles.levelInfoName, { color: level.color }]}>{level.label}</Text>
+              <Text style={styles.levelInfoCardSub}>{sessions30} séance{sessions30 !== 1 ? 's' : ''} ce mois</Text>
+            </View>
+
+            <View style={styles.levelInfoStats}>
+              <View style={styles.levelInfoStat}>
+                <Text style={styles.levelInfoStatValue}>{sessions30}</Text>
+                <Text style={styles.levelInfoStatLabel}>séances / mois</Text>
+              </View>
+              <View style={styles.levelInfoStatDivider} />
+              <View style={styles.levelInfoStat}>
+                <Text style={styles.levelInfoStatValue}>
+                  {volume30 >= 1000 ? `${(volume30 / 1000).toFixed(1)}t` : `${Math.round(volume30)}kg`}
+                </Text>
+                <Text style={styles.levelInfoStatLabel}>volume ce mois</Text>
+              </View>
+            </View>
+
+            {nextLevel && (
+              <View style={styles.levelInfoProgress}>
+                <View style={styles.levelInfoProgressHeader}>
+                  <Text style={styles.levelInfoProgressLabel}>Vers {nextLevel.label} {nextLevel.emoji}</Text>
+                  <Text style={styles.levelInfoProgressCount}>
+                    {nextLevel.minSessions - sessions30} séance{nextLevel.minSessions - sessions30 > 1 ? 's' : ''} restante{nextLevel.minSessions - sessions30 > 1 ? 's' : ''}
+                  </Text>
+                </View>
+                <View style={styles.levelInfoProgressBar}>
+                  <View style={[styles.levelInfoProgressFill, { width: `${Math.round(progressToNext * 100)}%` as any, backgroundColor: level.color }]} />
+                </View>
+              </View>
+            )}
+
+            <Text style={styles.levelInfoAllTitle}>Tous les niveaux</Text>
+            {FITNESS_LEVELS.map((l) => (
+              <View key={l.id} style={[styles.levelInfoRow, l.id === level.id && { backgroundColor: l.color + '18' }]}>
+                <Text style={styles.levelInfoRowEmoji}>{l.emoji}</Text>
+                <Text style={[styles.levelInfoRowName, { color: l.id === level.id ? l.color : theme.colors.text }]}>{l.label}</Text>
+                <Text style={styles.levelInfoRowReq}>{l.minSessions === 0 ? '< 2 séances' : `${l.minSessions}+ séances/mois`}</Text>
+                {l.id === level.id && <View style={[styles.levelInfoRowDot, { backgroundColor: l.color }]} />}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Settings Overlay */}
       {showSettings && (
         <View style={[StyleSheet.absoluteFillObject, styles.settingsOverlay]}>
@@ -376,19 +423,54 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.card,
   },
   signInText: { fontSize: 13, fontWeight: '600', color: theme.colors.primary },
-  levelCard: {
+  levelChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 4,
+    borderWidth: 1,
+  },
+  levelChipEmoji: { fontSize: 12 },
+  levelChipText: { fontSize: 12, fontWeight: '700' },
+  levelInfoOverlay: { backgroundColor: theme.colors.background, zIndex: 100 },
+  levelInfoHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: theme.spacing.md, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+  },
+  levelInfoTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text },
+  levelInfoContent: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md, paddingBottom: 32 },
+  levelInfoCard: {
+    alignItems: 'center', padding: 28, borderRadius: theme.radius.lg,
+    borderWidth: 2, marginBottom: theme.spacing.md,
+  },
+  levelInfoEmoji: { fontSize: 52, marginBottom: 8 },
+  levelInfoName: { fontSize: 26, fontWeight: '800', marginBottom: 4 },
+  levelInfoCardSub: { fontSize: 14, color: theme.colors.textSecondary },
+  levelInfoStats: {
+    flexDirection: 'row', backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.md, marginBottom: theme.spacing.md, overflow: 'hidden',
+  },
+  levelInfoStat: { flex: 1, alignItems: 'center', padding: 16 },
+  levelInfoStatValue: { fontSize: 22, fontWeight: '800', color: theme.colors.text },
+  levelInfoStatLabel: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  levelInfoStatDivider: { width: 1, backgroundColor: theme.colors.border },
+  levelInfoProgress: {
     backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
-    padding: 12, marginBottom: theme.spacing.sm,
-    borderWidth: 1, borderColor: theme.colors.border,
+    padding: 16, marginBottom: theme.spacing.md,
   },
-  levelLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  levelEmoji: { fontSize: 22 },
-  levelName: { fontSize: 14, fontWeight: '700' },
-  levelSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 1 },
-  levelBarWrap: {
-    height: 4, backgroundColor: theme.colors.border, borderRadius: 2, overflow: 'hidden',
+  levelInfoProgressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  levelInfoProgressLabel: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
+  levelInfoProgressCount: { fontSize: 13, color: theme.colors.textMuted },
+  levelInfoProgressBar: { height: 6, backgroundColor: theme.colors.border, borderRadius: 3, overflow: 'hidden' },
+  levelInfoProgressFill: { height: 6, borderRadius: 3 },
+  levelInfoAllTitle: {
+    fontSize: 11, fontWeight: '700', color: theme.colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8,
   },
-  levelBarFill: { height: 4, borderRadius: 2 },
+  levelInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: theme.radius.md, marginBottom: 4 },
+  levelInfoRowEmoji: { fontSize: 18, width: 24, textAlign: 'center' },
+  levelInfoRowName: { fontSize: 14, fontWeight: '600', flex: 1 },
+  levelInfoRowReq: { fontSize: 12, color: theme.colors.textMuted },
+  levelInfoRowDot: { width: 8, height: 8, borderRadius: 4 },
   startButton: {
     backgroundColor: theme.colors.primary, borderRadius: theme.radius.lg,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
