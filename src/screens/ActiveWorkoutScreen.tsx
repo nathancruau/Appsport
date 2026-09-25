@@ -214,7 +214,15 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const [state, dispatch] = useReducer(reducer, { name: '', exercises: [], elapsedSeconds: 0, showPicker: false });
   const [allExercises, setAllExercises] = useState<Exercise[]>([]);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSearch = (text: string) => {
+    setSearchInput(text);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setSearch(text), 150);
+  };
+  const clearSearch = () => { if (searchTimer.current) clearTimeout(searchTimer.current); setSearchInput(''); setSearch(''); };
   const [saving, setSaving] = useState(false);
   const pausedRef = useRef(false);
 
@@ -629,7 +637,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
           <View style={[styles.modal, { paddingTop: Math.max(insets.top, 16) }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Choisir un exercice</Text>
-              <TouchableOpacity onPress={() => dispatch({ type: 'TOGGLE_PICKER' })}>
+              <TouchableOpacity onPress={() => { dispatch({ type: 'TOGGLE_PICKER' }); clearSearch(); }}>
                 <Ionicons name="close" size={24} color={theme.colors.text} />
               </TouchableOpacity>
             </View>
@@ -639,12 +647,12 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                 style={styles.searchInput}
                 placeholder="Rechercher..."
                 placeholderTextColor={theme.colors.textMuted}
-                value={search}
-                onChangeText={setSearch}
+                value={searchInput}
+                onChangeText={onSearch}
                 autoFocus
               />
-              {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch('')}>
+              {searchInput.length > 0 && (
+                <TouchableOpacity onPress={clearSearch}>
                   <Ionicons name="close-circle" size={16} color={theme.colors.textMuted} />
                 </TouchableOpacity>
               )}

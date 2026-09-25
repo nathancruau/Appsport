@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -16,7 +16,15 @@ export default function HistoryScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSearch = (text: string) => {
+    setSearchInput(text);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setSearch(text), 150);
+  };
+  const clearSearch = () => { if (searchTimer.current) clearTimeout(searchTimer.current); setSearchInput(''); setSearch(''); };
 
   useFocusEffect(
     useCallback(() => {
@@ -71,11 +79,11 @@ export default function HistoryScreen() {
           style={styles.searchInput}
           placeholder="Rechercher..."
           placeholderTextColor={theme.colors.textMuted}
-          value={search}
-          onChangeText={setSearch}
+          value={searchInput}
+          onChangeText={onSearch}
         />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
+        {searchInput.length > 0 && (
+          <TouchableOpacity onPress={clearSearch}>
             <Ionicons name="close-circle" size={16} color={theme.colors.textMuted} />
           </TouchableOpacity>
         )}

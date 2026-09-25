@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   SectionList, Modal, ScrollView,
@@ -20,7 +20,15 @@ export default function ExercisesScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSearch = (text: string) => {
+    setSearchInput(text);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setSearch(text), 150);
+  };
+  const clearSearch = () => { if (searchTimer.current) clearTimeout(searchTimer.current); setSearchInput(''); setSearch(''); };
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
   const [newMuscle, setNewMuscle] = useState('chest');
@@ -223,11 +231,11 @@ export default function ExercisesScreen() {
           style={styles.searchInput}
           placeholder="Rechercher..."
           placeholderTextColor={theme.colors.textMuted}
-          value={search}
-          onChangeText={setSearch}
+          value={searchInput}
+          onChangeText={onSearch}
         />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
+        {searchInput.length > 0 && (
+          <TouchableOpacity onPress={clearSearch}>
             <Ionicons name="close-circle" size={16} color={theme.colors.textMuted} />
           </TouchableOpacity>
         )}

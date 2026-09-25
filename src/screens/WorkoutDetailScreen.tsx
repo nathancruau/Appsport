@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
   TouchableOpacity, Modal, TextInput, SectionList,
@@ -32,7 +32,15 @@ export default function WorkoutDetailScreen() {
   const [showRename, setShowRename] = useState(false);
   const [renameName, setRenameName] = useState('');
   const [showExPicker, setShowExPicker] = useState(false);
+  const [exSearchInput, setExSearchInput] = useState('');
   const [exSearch, setExSearch] = useState('');
+  const exSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onExSearch = (text: string) => {
+    setExSearchInput(text);
+    if (exSearchTimer.current) clearTimeout(exSearchTimer.current);
+    exSearchTimer.current = setTimeout(() => setExSearch(text), 150);
+  };
+  const clearExSearch = () => { if (exSearchTimer.current) clearTimeout(exSearchTimer.current); setExSearchInput(''); setExSearch(''); };
   const [alertModal, setAlertModal] = useState<{ title: string; message: string; buttons: AlertBtn[] } | null>(null);
   const [editModal, setEditModal] = useState<{
     ex: WorkoutExerciseDetail;
@@ -149,7 +157,7 @@ export default function WorkoutDetailScreen() {
 
   const addNewExercise = async (ex: Exercise) => {
     setShowExPicker(false);
-    setExSearch('');
+    clearExSearch();
     await addExerciseToWorkout(params.workoutId, ex.id);
     await load();
     // Reload the updated exercises and open edit modal for the newly added one
@@ -540,7 +548,7 @@ export default function WorkoutDetailScreen() {
       {showExPicker && (
         <View style={[StyleSheet.absoluteFillObject, styles.overlay]}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setShowExPicker(false); setExSearch(''); }}>
+            <TouchableOpacity onPress={() => { setShowExPicker(false); clearExSearch(); }}>
               <Text style={styles.cancelText}>Annuler</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Ajouter un exercice</Text>
@@ -552,12 +560,12 @@ export default function WorkoutDetailScreen() {
               style={styles.searchInput}
               placeholder="Rechercher…"
               placeholderTextColor={theme.colors.textMuted}
-              value={exSearch}
-              onChangeText={setExSearch}
+              value={exSearchInput}
+              onChangeText={onExSearch}
               autoFocus
             />
-            {exSearch.length > 0 && (
-              <TouchableOpacity onPress={() => setExSearch('')}>
+            {exSearchInput.length > 0 && (
+              <TouchableOpacity onPress={clearExSearch}>
                 <Ionicons name="close-circle" size={15} color={theme.colors.textMuted} />
               </TouchableOpacity>
             )}
