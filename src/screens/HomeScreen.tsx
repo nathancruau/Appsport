@@ -14,7 +14,7 @@ import { formatDate, formatDuration } from '../utils/calculations';
 import { useAuth } from '../context/AuthContext';
 import { version } from '../../package.json';
 import { computeFitnessLevel, FITNESS_LEVELS } from '../utils/fitnessLevel';
-import { useDynamicFavicon } from '../hooks/useDynamicFavicon';
+import { drawFavicon } from '../utils/drawFavicon';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList> };
 type WorkoutItem = Workout & { exerciseCount: number; totalVolume: number };
@@ -32,8 +32,7 @@ export default function HomeScreen({ navigation }: Props) {
   const [hasPausedWorkout, setHasPausedWorkout] = useState(false);
   const [streak, setStreak] = useState(0);
   const [sessions30, setSessions30] = useState(0);
-
-  useDynamicFavicon();
+  const [volume30, setVolume30] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -43,13 +42,17 @@ export default function HomeScreen({ navigation }: Props) {
         if (!active) return;
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - 30);
-        const count30 = data.filter((w) => new Date(w.date) >= cutoff).length;
+        const recent30 = data.filter((w) => new Date(w.date) >= cutoff);
+        const count30 = recent30.length;
+        const vol30 = recent30.reduce((s, w) => s + w.totalVolume, 0);
         setWorkouts(data.slice(0, 5));
         setTemplates(tmpl);
         setAppSettings(settings);
         setHasPausedWorkout(!!paused);
         setStreak(str);
         setSessions30(count30);
+        setVolume30(vol30);
+        drawFavicon(count30, vol30);
         setLoading(false);
       });
       return () => { active = false; };
