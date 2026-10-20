@@ -280,20 +280,23 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
   const [noteText, setNoteText] = useState('');
   const [noteDate, setNoteDate] = useState('');
 
-  const [collapsedExs, setCollapsedExs] = useState<Set<number>>(new Set());
-  const draggingIdxRef = useRef<number | null>(null);
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  // expandedExs = set of exercise IDs currently expanded; empty = all collapsed (default)
+  const [expandedExs, setExpandedExs] = useState<Set<number>>(new Set());
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
 
-  const handleDragStart = (idx: number) => { draggingIdxRef.current = idx; };
-  const handleDragOver = (idx: number) => { if (draggingIdxRef.current !== idx) setDragOverIdx(idx); };
-  const handleDrop = (idx: number) => {
-    const from = draggingIdxRef.current;
-    if (from !== null && from !== idx) dispatch({ type: 'REORDER_EXERCISE', from, to: idx });
-    draggingIdxRef.current = null;
-    setDragOverIdx(null);
+  const handleGripTap = (ei: number) => {
+    if (draggingIdx === null) {
+      setDraggingIdx(ei); // pick up
+    } else if (draggingIdx === ei) {
+      setDraggingIdx(null); // cancel
+    } else {
+      // ei may equal exercises.length (place at end)
+      const to = ei > draggingIdx ? ei - 1 : ei;
+      dispatch({ type: 'REORDER_EXERCISE', from: draggingIdx, to });
+      setDraggingIdx(null); // place
+    }
   };
-  const handleDragEnd = () => { draggingIdxRef.current = null; setDragOverIdx(null); };
-  const toggleCollapse = (exId: number) => setCollapsedExs(prev => {
+  const toggleExpand = (exId: number) => setExpandedExs(prev => {
     const next = new Set(prev);
     if (next.has(exId)) next.delete(exId); else next.add(exId);
     return next;
@@ -574,17 +577,12 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
             state.exercises.map((ae, ei) => {
               const isTopOfSuperset = state.exercises[ei + 1]?.isSuperset === true;
               const partnerName = ae.isSuperset && ei > 0 ? state.exercises[ei - 1].exercise.name : undefined;
-              const isDropTarget = dragOverIdx === ei;
               return (
-                <View
-                  key={`${ae.exercise.id}-${ei}`}
-                  {...(Platform.OS === 'web' ? {
-                    onDragOver: (e: any) => { e.preventDefault(); handleDragOver(ei); },
-                    onDrop: (e: any) => { e.preventDefault(); handleDrop(ei); },
-                  } : {})}
-                >
-                  {isDropTarget && draggingIdxRef.current !== null && draggingIdxRef.current !== ei && (
-                    <View style={styles.dropIndicator} />
+                <View key={`${ae.exercise.id}-${ei}`}>
+                  {draggingIdx !== null && draggingIdx !== ei && (
+                    <TouchableOpacity style={styles.dropIndicator} onPress={() => handleGripTap(ei)} activeOpacity={0.6}>
+                      <Text style={styles.dropIndicatorText}>↓ Déplacer ici</Text>
+                    </TouchableOpacity>
                   )}
                   {ae.isSuperset && ei > 0 && (
                     <View style={styles.supersetConnector}>
@@ -601,10 +599,10 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                     isLast={ei === state.exercises.length - 1}
                     isTopOfSuperset={isTopOfSuperset}
                     supersetPartnerName={partnerName}
-                    collapsed={collapsedExs.has(ae.exercise.id)}
-                    onToggleCollapse={() => toggleCollapse(ae.exercise.id)}
-                    onDragStart={() => handleDragStart(ei)}
-                    onDragEnd={handleDragEnd}
+                    collapsed={!expandedExs.has(ae.exercise.id)}
+                    onToggleCollapse={() => toggleExpand(ae.exercise.id)}
+                    isDragging={draggingIdx === ei}
+                    onGripTap={() => handleGripTap(ei)}
                     onAddSet={() => { dispatch({ type: 'ADD_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                     onDuplicateSet={() => { dispatch({ type: 'DUPLICATE_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
                     onRemoveSet={(si) => dispatch({ type: 'REMOVE_SET', ei, si })}
@@ -623,7 +621,13 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
             })
           )}
 
-          <TouchableOpacity style={styles.addExBtn} onPress={() => dispatch({ type: 'TOGGLE_PICKER' })}>
+          {draggingIdx !== null && (
+            <TouchableOpacity style={styles.dropIndicator} onPress={() => handleGripTap(state.exercises.length)} activeOpacity={0.6}>
+              <Text style={styles.dropIndicatorText}>↓ Déplacer en dernier</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity style={styles.addExBtn} onPress={() => { setDraggingIdx(null); dispatch({ type: 'TOGGLE_PICKER' }); }}>
             <Ionicons name="add" size={20} color={theme.colors.text} />
             <Text style={styles.addExText}>Ajouter un exercice</Text>
           </TouchableOpacity>
@@ -924,7 +928,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
 function ExerciseBlock({
   ae, ei, isFirst, isLast, isTopOfSuperset, supersetPartnerName,
-  collapsed, onToggleCollapse, onDragStart, onDragEnd,
+  collapsed, onToggleCollapse, isDragging, onGripTap,
   onAddSet, onDuplicateSet, onRemoveSet, onUpdateSet, onUpdateRPE, onToggleComplete,
   onRemoveExercise, onMoveUp, onMoveDown, onToggleSuperset, onNotePress, showRPE,
 }: {
@@ -934,8 +938,8 @@ function ExerciseBlock({
   supersetPartnerName?: string;
   collapsed: boolean;
   onToggleCollapse: () => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
+  isDragging: boolean;
+  onGripTap: () => void;
   onAddSet: () => void;
   onDuplicateSet: () => void;
   onRemoveSet: (si: number) => void;
@@ -967,7 +971,7 @@ function ExerciseBlock({
   };
 
   return (
-    <View style={[styles.exBlock, ae.isSuperset && styles.exBlockSuperset, isTopOfSuperset && !ae.isSuperset && styles.exBlockSupersetTop]}>
+    <View style={[styles.exBlock, ae.isSuperset && styles.exBlockSuperset, isTopOfSuperset && !ae.isSuperset && styles.exBlockSupersetTop, isDragging && styles.exBlockDragging]}>
       <View style={styles.exHeader}>
         <View style={[styles.muscleTag, { backgroundColor: muscleColor + '22' }]}>
           <View style={[styles.dot, { backgroundColor: muscleColor }]} />
@@ -976,19 +980,10 @@ function ExerciseBlock({
           </Text>
         </View>
         <View style={styles.exHeaderActions}>
-          {/* Drag handle — web only */}
-          {Platform.OS === 'web' && (
-            <View
-              {...{
-                draggable: true,
-                onDragStart: (e: any) => { e.stopPropagation(); onDragStart(); },
-                onDragEnd: (e: any) => { onDragEnd(); },
-              }}
-              style={styles.dragHandle}
-            >
-              <Ionicons name="reorder-three" size={20} color={theme.colors.textMuted} />
-            </View>
-          )}
+          {/* Grip handle — tap to pick up / place */}
+          <TouchableOpacity onPress={onGripTap} style={styles.dragHandle} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="reorder-three" size={20} color={isDragging ? theme.colors.primary : theme.colors.textMuted} />
+          </TouchableOpacity>
           {!isLast && (
             <TouchableOpacity
               onPress={onToggleSuperset}
@@ -1465,12 +1460,20 @@ const styles = StyleSheet.create({
   },
   summaryCloseBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
 
+  exBlockDragging: {
+    borderWidth: 2, borderColor: theme.colors.primary, opacity: 0.7,
+  },
   dropIndicator: {
-    height: 3, backgroundColor: theme.colors.primary,
-    marginHorizontal: theme.spacing.md, borderRadius: 2, marginBottom: 2,
+    marginHorizontal: theme.spacing.md, marginBottom: 4,
+    borderRadius: theme.radius.sm, borderWidth: 1.5,
+    borderColor: theme.colors.primary, borderStyle: 'dashed',
+    paddingVertical: 8, alignItems: 'center',
+    backgroundColor: theme.colors.primary + '10',
+  },
+  dropIndicatorText: {
+    fontSize: 12, color: theme.colors.primary, fontWeight: '600',
   },
   dragHandle: {
-    cursor: 'grab' as any,
     padding: 2,
   },
   exCollapsedSummary: {
