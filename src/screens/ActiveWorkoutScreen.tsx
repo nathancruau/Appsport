@@ -1464,4 +1464,16 @@ const styles = StyleSheet.create({
     paddingVertical: 16, alignItems: 'center',
   },
   summaryCloseBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+
+  dropIndicator: {
+    height: 3, backgroundColor: theme.colors.primary,
+    marginHorizontal: theme.spacing.md, borderRadius: 2, marginBottom: 2,
+  },
+  dragHandle: {
+    cursor: 'grab' as any,
+    padding: 2,
+  },
+  exCollapsedSummary: {
+    fontSize: 12, color: theme.colors.textMuted, marginTop: 2, marginBottom: 2,
+  },
 });
