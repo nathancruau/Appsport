@@ -42,6 +42,7 @@ type Action =
   | { type: 'UPDATE_RPE'; ei: number; si: number; value: string }
   | { type: 'TOGGLE_COMPLETE'; ei: number; si: number }
   | { type: 'MOVE_EXERCISE'; index: number; direction: 'up' | 'down' }
+  | { type: 'REORDER_EXERCISE'; from: number; to: number }
   | { type: 'TOGGLE_SUPERSET'; index: number }
   | { type: 'RESTORE'; payload: { name: string; exercises: ActiveExercise[]; elapsedSeconds: number } }
   | { type: 'TICK' }
@@ -148,6 +149,13 @@ function reducer(state: State, action: Action): State {
         [exs[i], exs[i + 1]] = [exs[i + 1], exs[i]];
         if (exs[i].isSuperset) exs[i] = { ...exs[i], isSuperset: false };
       }
+      return { ...state, exercises: exs };
+    }
+    case 'REORDER_EXERCISE': {
+      if (action.from === action.to) return state;
+      const exs = [...state.exercises];
+      const [moved] = exs.splice(action.from, 1);
+      exs.splice(action.to, 0, moved);
       return { ...state, exercises: exs };
     }
     case 'TOGGLE_SUPERSET': {
@@ -263,6 +271,25 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
   } | null>(null);
   const [noteText, setNoteText] = useState('');
   const [noteDate, setNoteDate] = useState('');
+
+  const [collapsedExs, setCollapsedExs] = useState<Set<number>>(new Set());
+  const draggingIdxRef = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  const handleDragStart = (idx: number) => { draggingIdxRef.current = idx; };
+  const handleDragOver = (idx: number) => { if (draggingIdxRef.current !== idx) setDragOverIdx(idx); };
+  const handleDrop = (idx: number) => {
+    const from = draggingIdxRef.current;
+    if (from !== null && from !== idx) dispatch({ type: 'REORDER_EXERCISE', from, to: idx });
+    draggingIdxRef.current = null;
+    setDragOverIdx(null);
+  };
+  const handleDragEnd = () => { draggingIdxRef.current = null; setDragOverIdx(null); };
+  const toggleCollapse = (exId: number) => setCollapsedExs(prev => {
+    const next = new Set(prev);
+    if (next.has(exId)) next.delete(exId); else next.add(exId);
+    return next;
+  });
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -539,8 +566,18 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
             state.exercises.map((ae, ei) => {
               const isTopOfSuperset = state.exercises[ei + 1]?.isSuperset === true;
               const partnerName = ae.isSuperset && ei > 0 ? state.exercises[ei - 1].exercise.name : undefined;
+              const isDropTarget = dragOverIdx === ei;
               return (
-                <React.Fragment key={`${ae.exercise.id}-${ei}`}>
+                <View
+                  key={`${ae.exercise.id}-${ei}`}
+                  {...(Platform.OS === 'web' ? {
+                    onDragOver: (e: any) => { e.preventDefault(); handleDragOver(ei); },
+                    onDrop: (e: any) => { e.preventDefault(); handleDrop(ei); },
+                  } : {})}
+                >
+                  {isDropTarget && draggingIdxRef.current !== null && draggingIdxRef.current !== ei && (
+                    <View style={styles.dropIndicator} />
+                  )}
                   {ae.isSuperset && ei > 0 && (
                     <View style={styles.supersetConnector}>
                       <View style={styles.supersetLine} />
@@ -556,6 +593,10 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                     isLast={ei === state.exercises.length - 1}
                     isTopOfSuperset={isTopOfSuperset}
                     supersetPartnerName={partnerName}
+                    collapsed={collapsedExs.has(ae.exercise.id)}
+                    onToggleCollapse={() => toggleCollapse(ae.exercise.id)}
+                    onDragStart={() => handleDragStart(ei)}
+                    onDragEnd={handleDragEnd}
                     onAddSet={() => { dispatch({ type: 'ADD_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                     onDuplicateSet={() => { dispatch({ type: 'DUPLICATE_SET', ei }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
                     onRemoveSet={(si) => dispatch({ type: 'REMOVE_SET', ei, si })}
@@ -569,7 +610,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
                     onNotePress={() => openNoteModal(ae)}
                     showRPE={restSettings.showRPE ?? true}
                   />
-                </React.Fragment>
+                </View>
               );
             })
           )}
@@ -875,6 +916,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
 
 function ExerciseBlock({
   ae, ei, isFirst, isLast, isTopOfSuperset, supersetPartnerName,
+  collapsed, onToggleCollapse, onDragStart, onDragEnd,
   onAddSet, onDuplicateSet, onRemoveSet, onUpdateSet, onUpdateRPE, onToggleComplete,
   onRemoveExercise, onMoveUp, onMoveDown, onToggleSuperset, onNotePress, showRPE,
 }: {
@@ -882,6 +924,10 @@ function ExerciseBlock({
   isFirst: boolean; isLast: boolean;
   isTopOfSuperset: boolean;
   supersetPartnerName?: string;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
   onAddSet: () => void;
   onDuplicateSet: () => void;
   onRemoveSet: (si: number) => void;
@@ -922,6 +968,19 @@ function ExerciseBlock({
           </Text>
         </View>
         <View style={styles.exHeaderActions}>
+          {/* Drag handle — web only */}
+          {Platform.OS === 'web' && (
+            <View
+              {...{
+                draggable: true,
+                onDragStart: (e: any) => { e.stopPropagation(); onDragStart(); },
+                onDragEnd: (e: any) => { onDragEnd(); },
+              }}
+              style={styles.dragHandle}
+            >
+              <Ionicons name="reorder-three" size={20} color={theme.colors.textMuted} />
+            </View>
+          )}
           {!isLast && (
             <TouchableOpacity
               onPress={onToggleSuperset}
@@ -931,65 +990,83 @@ function ExerciseBlock({
               <Text style={[styles.ssBtnText, isTopOfSuperset && styles.ssBtnTextActive]}>SS</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={onMoveUp} disabled={isFirst} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="chevron-up" size={16} color={isFirst ? theme.colors.textMuted + '40' : theme.colors.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onMoveDown} disabled={isLast} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="chevron-down" size={16} color={isLast ? theme.colors.textMuted + '40' : theme.colors.textMuted} />
-          </TouchableOpacity>
+          {/* Up/down arrows — native only */}
+          {Platform.OS !== 'web' && (
+            <>
+              <TouchableOpacity onPress={onMoveUp} disabled={isFirst} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="chevron-up" size={16} color={isFirst ? theme.colors.textMuted + '40' : theme.colors.textMuted} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onMoveDown} disabled={isLast} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="chevron-down" size={16} color={isLast ? theme.colors.textMuted + '40' : theme.colors.textMuted} />
+              </TouchableOpacity>
+            </>
+          )}
           <TouchableOpacity onPress={onNotePress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="document-text-outline" size={16} color={theme.colors.textMuted} />
           </TouchableOpacity>
           <TouchableOpacity onPress={onRemoveExercise} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="trash-outline" size={16} color={theme.colors.textMuted} />
           </TouchableOpacity>
+          {/* Collapse toggle */}
+          <TouchableOpacity onPress={onToggleCollapse} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name={collapsed ? 'chevron-down' : 'chevron-up'} size={16} color={theme.colors.textMuted} />
+          </TouchableOpacity>
         </View>
       </View>
 
       <Text style={styles.exName}>{ae.exercise.name}</Text>
 
-      {supersetPartnerName && (
-        <View style={styles.supersetPartnerRow}>
-          <Ionicons name="swap-vertical" size={12} color={SUPERSET_COLOR} />
-          <Text style={styles.supersetPartnerText}>Superset avec {supersetPartnerName}</Text>
-        </View>
-      )}
-      {isTopOfSuperset && !ae.isSuperset && (
-        <View style={styles.supersetPartnerRow}>
-          <Ionicons name="swap-vertical" size={12} color={SUPERSET_COLOR} />
-          <Text style={styles.supersetPartnerText}>Enchaîner sans repos</Text>
-        </View>
-      )}
-
-      {!isCardio && ae.bestSet && ae.exercise.trackingType !== 'time' && (
-        <Text style={styles.bestLabel}>
-          Record : {ae.bestSet.weight} kg × {ae.bestSet.reps} reps · 1RM ≈ {ae.bestSet.oneRM} kg
+      {collapsed && (
+        <Text style={styles.exCollapsedSummary}>
+          {ae.sets.length} série{ae.sets.length > 1 ? 's' : ''}
+          {!isCardio && ae.sets[0]?.weight ? ` · ${ae.sets[0].weight} kg` : ''}
         </Text>
       )}
 
-      {!(ae.exercise.cardioFields?.length) && (
-        <View style={styles.setHeader}>
-          <Text style={[styles.setCell, { width: 28 }]}>#</Text>
-          <Text style={[styles.setCell, { flex: 1 }]}>Précédent</Text>
-          {ae.exercise.trackingType === 'time' ? (
-            <Text style={[styles.setCell, { flex: 1, textAlign: 'center' }]}>Durée (s)</Text>
-          ) : ae.exercise.trackingType === 'weight+time' ? (
-            <>
-              <Text style={[styles.setCell, { width: 62, textAlign: 'center' }]}>kg</Text>
-              <Text style={[styles.setCell, { width: 70, textAlign: 'center' }]}>Durée (s)</Text>
-            </>
-          ) : (
-            <>
-              <Text style={[styles.setCell, { width: 72, textAlign: 'center' }]}>kg</Text>
-              <Text style={[styles.setCell, { width: 60, textAlign: 'center' }]}>Reps</Text>
-            </>
+      {!collapsed && (
+        <>
+          {supersetPartnerName && (
+            <View style={styles.supersetPartnerRow}>
+              <Ionicons name="swap-vertical" size={12} color={SUPERSET_COLOR} />
+              <Text style={styles.supersetPartnerText}>Superset avec {supersetPartnerName}</Text>
+            </View>
           )}
-          <Text style={[styles.setCell, { width: 36 }]}> </Text>
-          <Text style={[styles.setCell, { width: 24 }]}> </Text>
-        </View>
-      )}
+          {isTopOfSuperset && !ae.isSuperset && (
+            <View style={styles.supersetPartnerRow}>
+              <Ionicons name="swap-vertical" size={12} color={SUPERSET_COLOR} />
+              <Text style={styles.supersetPartnerText}>Enchaîner sans repos</Text>
+            </View>
+          )}
 
-      {ae.sets.map((s, si) => {
+          {!isCardio && ae.bestSet && ae.exercise.trackingType !== 'time' && (
+            <Text style={styles.bestLabel}>
+              Record : {ae.bestSet.weight} kg × {ae.bestSet.reps} reps · 1RM ≈ {ae.bestSet.oneRM} kg
+            </Text>
+          )}
+
+          {!(ae.exercise.cardioFields?.length) && (
+            <View style={styles.setHeader}>
+              <Text style={[styles.setCell, { width: 28 }]}>#</Text>
+              <Text style={[styles.setCell, { flex: 1 }]}>Précédent</Text>
+              {ae.exercise.trackingType === 'time' ? (
+                <Text style={[styles.setCell, { flex: 1, textAlign: 'center' }]}>Durée (s)</Text>
+              ) : ae.exercise.trackingType === 'weight+time' ? (
+                <>
+                  <Text style={[styles.setCell, { width: 62, textAlign: 'center' }]}>kg</Text>
+                  <Text style={[styles.setCell, { width: 70, textAlign: 'center' }]}>Durée (s)</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={[styles.setCell, { width: 72, textAlign: 'center' }]}>kg</Text>
+                  <Text style={[styles.setCell, { width: 60, textAlign: 'center' }]}>Reps</Text>
+                </>
+              )}
+              <Text style={[styles.setCell, { width: 36 }]}> </Text>
+              <Text style={[styles.setCell, { width: 24 }]}> </Text>
+            </View>
+          )}
+
+          {ae.sets.map((s, si) => {
         const prev = prevWorking[si];
         let compColor: string | null = null;
         if (s.completed && prev) {
@@ -1143,11 +1220,13 @@ function ExerciseBlock({
         );
       })}
 
-      <TouchableOpacity style={styles.addSetBtn} onPress={handleAddTap}>
-        <Ionicons name="add" size={16} color={theme.colors.textSecondary} />
-        <Text style={styles.addSetText}>Ajouter une série</Text>
-        <Text style={styles.addSetHint}>  double-tap = dupliquer</Text>
-      </TouchableOpacity>
+          <TouchableOpacity style={styles.addSetBtn} onPress={handleAddTap}>
+            <Ionicons name="add" size={16} color={theme.colors.textSecondary} />
+            <Text style={styles.addSetText}>Ajouter une série</Text>
+            <Text style={styles.addSetHint}>  double-tap = dupliquer</Text>
+          </TouchableOpacity>
+        </>
+      )}
     </View>
   );
 }
