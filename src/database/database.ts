@@ -815,3 +815,68 @@ export async function getFourWeekMuscleVolume(): Promise<Record<string, number>>
   }
   return result;
 }
+
+// ─── 90-day muscle group stats ────────────────────────────────────────────────
+
+export interface MuscleGroupStat {
+  sessions: number;
+  volume: number;
+  recentVol: number;
+  earlyVol: number;
+  recentSessions: number;
+  earlySessions: number;
+}
+
+const TRACKED_MUSCLE_GROUPS = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core', 'cardio', 'other'];
+
+export async function getMuscleGroupStats90(): Promise<Record<string, MuscleGroupStat>> {
+  const workouts = await getJSON<StoredWorkout[]>(KEY_WORKOUTS, []);
+  const now = Date.now();
+  const cutoff90 = now - 90 * 24 * 60 * 60 * 1000;
+  const cutoff30 = now - 30 * 24 * 60 * 60 * 1000;
+
+  const result: Record<string, MuscleGroupStat> = {};
+  for (const g of TRACKED_MUSCLE_GROUPS) {
+    result[g] = { sessions: 0, volume: 0, recentVol: 0, earlyVol: 0, recentSessions: 0, earlySessions: 0 };
+  }
+
+  for (const w of workouts) {
+    const t = new Date(w.date).getTime();
+    if (t < cutoff90) continue;
+    const isRecent = t >= cutoff30;
+
+    const trainedGroups = new Set<string>();
+    for (const ex of w.exercises) {
+      const mg = TRACKED_MUSCLE_GROUPS.includes(ex.muscleGroup) ? ex.muscleGroup : 'other';
+      let vol = 0;
+      for (const s of ex.sets) {
+        if (s.completed && !s.isWarmup && s.reps != null && s.weight != null) {
+          vol += s.reps * s.weight;
+        }
+      }
+      if (vol > 0 || ex.sets.some((s) => s.completed && !s.isWarmup)) {
+        trainedGroups.add(mg);
+        result[mg].volume += vol;
+        if (isRecent) result[mg].recentVol += vol;
+        else result[mg].earlyVol += vol;
+      }
+    }
+    for (const mg of trainedGroups) {
+      result[mg].sessions += 1;
+      if (isRecent) result[mg].recentSessions += 1;
+      else result[mg].earlySessions += 1;
+    }
+  }
+  return result;
+}
+
+const KEY_FITNESS_OVR = '@appsport_fitness_ovr';
+
+export async function saveFitnessCardOvr(ovr: number): Promise<void> {
+  await AsyncStorage.setItem(KEY_FITNESS_OVR, String(ovr));
+}
+
+export async function loadFitnessCardOvr(): Promise<number | null> {
+  const v = await AsyncStorage.getItem(KEY_FITNESS_OVR);
+  return v != null ? parseFloat(v) : null;
+}
