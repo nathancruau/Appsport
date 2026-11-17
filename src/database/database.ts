@@ -890,3 +890,21 @@ export async function saveFitnessTier(tier: string): Promise<void> {
 export async function loadFitnessTier(): Promise<string | null> {
   return AsyncStorage.getItem(KEY_FITNESS_TIER);
 }
+
+// ─── OVR history ──────────────────────────────────────────────────────────────
+
+export interface OvrEntry { date: string; ovr: number; }
+const KEY_OVR_HISTORY = '@appsport_ovr_history';
+
+export async function appendOvrHistory(ovr: number): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  const history = await getJSON<OvrEntry[]>(KEY_OVR_HISTORY, []);
+  const last = history[history.length - 1];
+  if (last && last.date === today) { last.ovr = ovr; }
+  else { history.push({ date: today, ovr }); }
+  await AsyncStorage.setItem(KEY_OVR_HISTORY, JSON.stringify(history.slice(-60)));
+}
+
+export async function getOvrHistory(): Promise<OvrEntry[]> {
+  return getJSON<OvrEntry[]>(KEY_OVR_HISTORY, []);
+}

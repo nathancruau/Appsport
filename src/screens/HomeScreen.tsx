@@ -6,7 +6,7 @@ import {
 import Svg, {
   Polygon, Line, Circle, Text as SvgText,
   Rect as SvgRect, Defs, LinearGradient as SvgLinearGradient,
-  Stop, Path as SvgPath, Ellipse as SvgEllipse,
+  Stop, Path as SvgPath, Ellipse as SvgEllipse, Polyline,
 } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -14,7 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
-import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings, getPausedWorkout, getTrainingStreak, getMuscleGroupStats90, saveFitnessCardOvr, loadFitnessCardOvr, saveFitnessTier, loadFitnessTier } from '../database/database';
+import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings, getPausedWorkout, getTrainingStreak, getMuscleGroupStats90, saveFitnessCardOvr, loadFitnessCardOvr, saveFitnessTier, loadFitnessTier, appendOvrHistory, getOvrHistory, OvrEntry } from '../database/database';
 import { formatDate, formatDuration, parseLocalDate } from '../utils/calculations';
 import { useAuth } from '../context/AuthContext';
 import { version } from '../../package.json';
@@ -43,8 +43,11 @@ export default function HomeScreen({ navigation }: Props) {
   const [showLevelInfo, setShowLevelInfo] = useState(false);
   const [ovrDelta, setOvrDelta] = useState<number | null>(null);
   const [muscleCard, setMuscleCard] = useState<FitnessCard | null>(null);
-  const flipAnim = useRef(new Animated.Value(0)).current;
+  const flipDeg = useRef(new Animated.Value(0)).current;
+  const isFlippedRef = useRef(false);
   const [cardFlipped, setCardFlipped] = useState(false);
+  const [showOvrHistory, setShowOvrHistory] = useState(false);
+  const [ovrHistory, setOvrHistory] = useState<OvrEntry[]>([]);
   const [showConfetti, setShowConfetti] = useState(false);
   const [tierUpLabel, setTierUpLabel] = useState('');
   const confettiParticles = useRef(
@@ -115,6 +118,8 @@ export default function HomeScreen({ navigation }: Props) {
         drawFavicon(count30, vol30);
         saveFitnessCardOvr(newCard.ovr);
         saveFitnessTier(newCard.tier);
+        appendOvrHistory(newCard.ovr);
+        getOvrHistory().then(setOvrHistory);
         if (tierImproved) {
           setTierUpLabel(newCard.tierLabel);
           setShowConfetti(true);
@@ -181,26 +186,34 @@ export default function HomeScreen({ navigation }: Props) {
     </TouchableOpacity>
   );
 
-  const flipCard = () => {
-    Animated.spring(flipAnim, {
-      toValue: cardFlipped ? 0 : 1,
-      useNativeDriver: true,
+  const baseDegRef = useRef(0);
+
+  const flipCard = (toFlipped: boolean) => {
+    const toValue = toFlipped ? 180 : 0;
+    Animated.spring(flipDeg, {
+      toValue,
+      useNativeDriver: false,
       tension: 60,
       friction: 8,
-    }).start();
-    setCardFlipped(!cardFlipped);
+    }).start(() => {
+      isFlippedRef.current = toFlipped;
+      setCardFlipped(toFlipped);
+    });
   };
 
   const handleOpenCard = () => {
+    isFlippedRef.current = false;
     setCardFlipped(false);
-    flipAnim.setValue(0);
+    flipDeg.setValue(0);
     setShowLevelInfo(true);
   };
 
   const handleCloseCard = () => {
     setShowLevelInfo(false);
+    isFlippedRef.current = false;
     setCardFlipped(false);
-    flipAnim.setValue(0);
+    flipDeg.setValue(0);
+    setShowOvrHistory(false);
   };
 
   const swipePan = useRef(
@@ -208,12 +221,23 @@ export default function HomeScreen({ navigation }: Props) {
       onStartShouldSetPanResponder: () => true,
       onShouldBlockNativeResponder: () => false,
       onPanResponderTerminationRequest: () => true,
-      onPanResponderRelease: (_, gs) => { if (Math.abs(gs.dx) > 36) flipCard(); },
+      onPanResponderGrant: () => {
+        baseDegRef.current = isFlippedRef.current ? 180 : 0;
+      },
+      onPanResponderMove: (_, gs) => {
+        const raw = baseDegRef.current - gs.dx * (180 / 220);
+        flipDeg.setValue(Math.max(0, Math.min(180, raw)));
+      },
+      onPanResponderRelease: (_, gs) => {
+        const crossed = Math.abs(gs.dx) > 55;
+        const toFlipped = crossed ? !isFlippedRef.current : isFlippedRef.current;
+        flipCard(toFlipped);
+      },
     })
   ).current;
 
-  const frontRotate = flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
-  const backRotate = flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '360deg'] });
+  const frontRotate = flipDeg.interpolate({ inputRange: [0, 180], outputRange: ['0deg', '180deg'] });
+  const backRotate = flipDeg.interpolate({ inputRange: [0, 180], outputRange: ['180deg', '360deg'] });
 
   const renderRadarChart = (data: { label: string; value: number }[], accentColor: string, textColor: string) => {
     if (data.length < 3) return null;
@@ -284,6 +308,37 @@ export default function HomeScreen({ navigation }: Props) {
           const sx = cx - totalStarW / 2 + 9 + i * 18;
           return <Polygon key={i} points={starPath(sx, medalY, 7)} fill={c.shine} />;
         })}
+      </Svg>
+    );
+  };
+
+  const renderOvrSparkline = (history: OvrEntry[], accentColor: string, textColor: string) => {
+    if (history.length < 2) return null;
+    const W = 240; const H = 90; const PAD = 14;
+    const vals = history.map((e) => e.ovr);
+    const minV = Math.max(0, Math.min(...vals) - 5);
+    const maxV = Math.min(100, Math.max(...vals) + 5);
+    const range = maxV - minV || 1;
+    const pts = vals.map((v, i) => {
+      const x = PAD + (i / (vals.length - 1)) * (W - PAD * 2);
+      const y = H - PAD - ((v - minV) / range) * (H - PAD * 2);
+      return `${x},${y}`;
+    }).join(' ');
+    const last = history[history.length - 1];
+    const lastX = PAD + (W - PAD * 2);
+    const lastY = H - PAD - ((last.ovr - minV) / range) * (H - PAD * 2);
+    return (
+      <Svg width={W} height={H}>
+        <Polyline points={pts} fill="none" stroke={accentColor} strokeWidth={2.5} strokeLinejoin="round" />
+        {vals.map((v, i) => {
+          const x = PAD + (i / (vals.length - 1)) * (W - PAD * 2);
+          const y = H - PAD - ((v - minV) / range) * (H - PAD * 2);
+          return <Circle key={i} cx={x} cy={y} r={3} fill={accentColor + '80'} />;
+        })}
+        <Circle cx={lastX} cy={lastY} r={5} fill={accentColor} />
+        <SvgText x={lastX} y={lastY - 9} fill={accentColor} fontSize={11} textAnchor="middle" fontWeight="800">{last.ovr}</SvgText>
+        <SvgText x={PAD} y={H - 2} fill={textColor + '70'} fontSize={8} textAnchor="start">{history[0].date.slice(5)}</SvgText>
+        <SvgText x={lastX} y={H - 2} fill={textColor + '70'} fontSize={8} textAnchor="end">{last.date.slice(5)}</SvgText>
       </Svg>
     );
   };
@@ -495,7 +550,9 @@ export default function HomeScreen({ navigation }: Props) {
               <View style={styles.fifaTopSection}>
                 {/* Medal fills the full area */}
                 <View style={styles.fifaMedalArea}>
-                  {renderMedal(card.tier, card.accent)}
+                  <TouchableOpacity onPress={() => setShowOvrHistory(true)} activeOpacity={0.85}>
+                    {renderMedal(card.tier, card.accent)}
+                  </TouchableOpacity>
                 </View>
                 {/* Info column overlaid top-left */}
                 <View style={styles.fifaLeftCol}>
@@ -520,7 +577,7 @@ export default function HomeScreen({ navigation }: Props) {
 
               {/* Stats sur fond légèrement sombre pour contraste */}
               <View style={[styles.fifaStatsGrid, { backgroundColor: 'rgba(0,0,0,0.12)' }]}>
-                <View style={styles.fifaStatsCol}>
+                <View style={[styles.fifaStatsCol, { paddingRight: 12 }]}>
                   {card.attributes.slice(0, 3).map((attr) => (
                     <View key={attr.key} style={styles.fifaStatRow}>
                       <Text style={[styles.fifaStatVal, { color: card.accent }]}>{attr.score}</Text>
@@ -529,7 +586,7 @@ export default function HomeScreen({ navigation }: Props) {
                   ))}
                 </View>
                 <View style={[styles.fifaStatsDivider, { backgroundColor: card.accent + '30' }]} />
-                <View style={styles.fifaStatsCol}>
+                <View style={[styles.fifaStatsCol, { paddingLeft: 12 }]}>
                   {card.attributes.slice(3, 6).map((attr) => (
                     <View key={attr.key} style={styles.fifaStatRow}>
                       <Text style={[styles.fifaStatVal, { color: card.accent }]}>{attr.score}</Text>
@@ -561,11 +618,29 @@ export default function HomeScreen({ navigation }: Props) {
               </View>
             </Animated.View>
 
+            {/* OVR history panel */}
+            {showOvrHistory && (
+              <View style={[StyleSheet.absoluteFillObject, styles.ovrPanel]}>
+                {renderFifaBg(card.tier, card.accent)}
+                <TouchableOpacity style={{ position: 'absolute', top: 12, right: 12, zIndex: 3 }} onPress={() => setShowOvrHistory(false)}>
+                  <Ionicons name="close-circle" size={26} color={card.accent} />
+                </TouchableOpacity>
+                <Text style={[styles.ovrPanelTitle, { color: card.textOnCard }]}>ÉVOLUTION OVR</Text>
+                <View pointerEvents="none">
+                  {renderOvrSparkline(ovrHistory, card.accent, card.textOnCard)}
+                </View>
+                {ovrHistory.length < 2 && (
+                  <Text style={[styles.fifaNoData, { color: card.textOnCard + '70', marginTop: 0 }]}>Enregistre plusieurs séances{'\n'}pour voir ton évolution</Text>
+                )}
+                <Text style={[styles.fifaSwipeHint, { color: card.textOnCard + '50', marginTop: 10 }]}>OVR des 60 derniers jours</Text>
+              </View>
+            )}
+
           </View>
 
-          {ovrDelta !== null && Math.abs(ovrDelta) >= 0.5 && (
+          {ovrDelta !== null && ovrDelta !== 0 && (
             <Text style={styles.fifaDelta}>
-              {ovrDelta > 0 ? `+${ovrDelta.toFixed(1)}` : ovrDelta.toFixed(1)} depuis la dernière séance
+              {ovrDelta > 0 ? `+${Math.round(ovrDelta)}` : Math.round(ovrDelta)} pts depuis la dernière séance
             </Text>
           )}
 
@@ -740,6 +815,8 @@ const styles = StyleSheet.create({
   fifaBackTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, textAlign: 'center', marginBottom: 4 },
   fifaNoData: { fontSize: 13, fontStyle: 'italic', textAlign: 'center', paddingVertical: 40 },
   fifaDelta: { fontSize: 13, color: '#8BC34A', fontWeight: '600', letterSpacing: 0.3, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  ovrPanel: { borderRadius: 16, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 10 },
+  ovrPanelTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1.8, textAlign: 'center', marginBottom: 16 },
   tierUpBanner: {
     position: 'absolute', top: 60, alignSelf: 'center',
     backgroundColor: 'rgba(0,0,0,0.85)', borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10,
