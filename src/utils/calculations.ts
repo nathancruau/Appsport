@@ -39,14 +39,18 @@ export function muscleGroupLabel(group: string): string {
   return labels[group] ?? group;
 }
 
+// Parse a YYYY-MM-DD string as LOCAL midnight to avoid UTC offset shifting the day
+export function parseLocalDate(dateStr: string): Date {
+  const p = dateStr.split('-');
+  return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+}
+
 export function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  return parseLocalDate(dateStr).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 export function formatDateFull(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return parseLocalDate(dateStr).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 export function todayISO(): string {

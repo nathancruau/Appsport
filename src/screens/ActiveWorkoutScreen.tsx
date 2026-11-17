@@ -384,7 +384,7 @@ export default function ActiveWorkoutScreen({ navigation, route }: any) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (completing) {
       const isCardio = (ae.exercise.cardioFields?.length ?? 0) > 0 || ae.exercise.muscleGroup === 'cardio';
-      if (!isCardio && ae.exercise.trackingType !== 'time') {
+      if (!isCardio && !set.isWarmup && ae.exercise.trackingType !== 'time') {
         const w = Number(set.weight), r = Number(set.reps);
         if (w > 0 && r > 0) {
           const newORM = estimateOneRM(w, r);

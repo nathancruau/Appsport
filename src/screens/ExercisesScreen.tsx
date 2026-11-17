@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   SectionList, Modal, ScrollView,
@@ -53,16 +53,16 @@ export default function ExercisesScreen() {
     setAlertModal({ title, message, buttons });
   };
 
-  const filtered = exercises.filter(
-    (e) =>
-      e.name.toLowerCase().includes(search.toLowerCase()) ||
-      muscleGroupLabel(e.muscleGroup).toLowerCase().includes(search.toLowerCase())
-  );
-
-  const sections = MUSCLE_GROUPS.map((g) => ({
-    title: g,
-    data: filtered.filter((e) => e.muscleGroup === g),
-  })).filter((s) => s.data.length > 0);
+  const sections = useMemo(() => {
+    const q = search.toLowerCase();
+    const filtered = exercises.filter(
+      (e) => e.name.toLowerCase().includes(q) || muscleGroupLabel(e.muscleGroup).toLowerCase().includes(q)
+    );
+    return MUSCLE_GROUPS.map((g) => ({
+      title: g,
+      data: filtered.filter((e) => e.muscleGroup === g),
+    })).filter((s) => s.data.length > 0);
+  }, [exercises, search]);
 
   const handleAdd = async () => {
     const name = newName.trim();

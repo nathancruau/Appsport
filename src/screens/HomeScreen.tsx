@@ -10,10 +10,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
 import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings, getPausedWorkout, getTrainingStreak } from '../database/database';
-import { formatDate, formatDuration } from '../utils/calculations';
+import { formatDate, formatDuration, parseLocalDate } from '../utils/calculations';
 import { useAuth } from '../context/AuthContext';
 import { version } from '../../package.json';
-import { computeFitnessLevel, FITNESS_LEVELS } from '../utils/fitnessLevel';
+import { computeFitnessLevel } from '../utils/fitnessLevel'; // still used for level.emoji + level.label in FIFA card
+import { computeFitnessCard } from '../utils/fitnessCard';
 import { drawFavicon } from '../utils/drawFavicon';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList> };
@@ -33,6 +34,7 @@ export default function HomeScreen({ navigation }: Props) {
   const [streak, setStreak] = useState(0);
   const [sessions30, setSessions30] = useState(0);
   const [volume30, setVolume30] = useState(0);
+  const [sessions7, setSessions7] = useState(0);
   const [showLevelInfo, setShowLevelInfo] = useState(false);
 
   useFocusEffect(
@@ -41,11 +43,16 @@ export default function HomeScreen({ navigation }: Props) {
       setLoading(true);
       Promise.all([getRecentWorkouts(50), getTemplates(), getRestTimerSettings(), getPausedWorkout(), getTrainingStreak()]).then(([data, tmpl, settings, paused, str]) => {
         if (!active) return;
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 30);
-        const recent30 = data.filter((w) => new Date(w.date) >= cutoff);
+        const cutoff30 = new Date(); cutoff30.setDate(cutoff30.getDate() - 30); cutoff30.setHours(0, 0, 0, 0);
+        const recent30 = data.filter((w) => parseLocalDate(w.date) >= cutoff30);
         const count30 = recent30.length;
         const vol30 = recent30.reduce((s, w) => s + w.totalVolume, 0);
+        // Current week: Monday 00:00 → Sunday 23:59
+        const now = new Date();
+        const dow = now.getDay(); // 0=Sun
+        const daysSinceMon = dow === 0 ? 6 : dow - 1;
+        const monday = new Date(now); monday.setDate(now.getDate() - daysSinceMon); monday.setHours(0, 0, 0, 0);
+        const thisWeek = data.filter((w) => parseLocalDate(w.date) >= monday);
         setWorkouts(data.slice(0, 5));
         setTemplates(tmpl);
         setAppSettings(settings);
@@ -53,6 +60,7 @@ export default function HomeScreen({ navigation }: Props) {
         setStreak(str);
         setSessions30(count30);
         setVolume30(vol30);
+        setSessions7(thisWeek.length);
         drawFavicon(count30, vol30);
         setLoading(false);
       });
@@ -74,17 +82,10 @@ export default function HomeScreen({ navigation }: Props) {
     ]);
   };
 
-  const thisWeekCount = workouts.filter((w) => {
-    const d = new Date(w.date);
-    const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-    return d >= weekAgo;
-  }).length;
+  const thisWeekCount = sessions7;
 
   const level = computeFitnessLevel(sessions30);
-  const nextLevel = FITNESS_LEVELS.find((l) => l.minSessions > sessions30);
-  const progressToNext = nextLevel
-    ? Math.min(1, (sessions30 - level.minSessions) / (nextLevel.minSessions - level.minSessions))
-    : 1;
+  const card = computeFitnessCard(sessions30, volume30, streak, sessions7);
 
   const renderWorkout = ({ item }: { item: WorkoutItem }) => (
     <TouchableOpacity
@@ -165,11 +166,11 @@ export default function HomeScreen({ navigation }: Props) {
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            style={[styles.levelChip, { borderColor: level.color + '60', backgroundColor: level.color + '18' }]}
+            style={[styles.levelChip, { backgroundColor: card.cardBg, borderColor: card.accent + '80' }]}
             onPress={() => setShowLevelInfo(true)}
           >
-            <Text style={styles.levelChipEmoji}>{level.emoji}</Text>
-            <Text style={[styles.levelChipText, { color: level.color }]}>{level.label}</Text>
+            <Text style={[styles.levelChipOvr, { color: card.accent }]}>{card.ovr}</Text>
+            <Text style={[styles.levelChipTier, { color: card.textOnCard }]}>{card.tierLabel}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -272,60 +273,52 @@ export default function HomeScreen({ navigation }: Props) {
         </Modal>
       )}
 
-      {/* Level Info Overlay */}
+      {/* FIFA Card Overlay */}
       {showLevelInfo && (
-        <View style={[StyleSheet.absoluteFillObject, styles.levelInfoOverlay]}>
-          <View style={[styles.levelInfoHeader, { paddingTop: Math.max(insets.top, 16) }]}>
-            <Text style={styles.levelInfoTitle}>Progression</Text>
-            <TouchableOpacity onPress={() => setShowLevelInfo(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Ionicons name="close" size={22} color={theme.colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.levelInfoContent} showsVerticalScrollIndicator={false}>
-            <View style={[styles.levelInfoCard, { borderColor: level.color }]}>
-              <Text style={styles.levelInfoEmoji}>{level.emoji}</Text>
-              <Text style={[styles.levelInfoName, { color: level.color }]}>{level.label}</Text>
-              <Text style={styles.levelInfoCardSub}>{sessions30} séance{sessions30 !== 1 ? 's' : ''} ce mois</Text>
-            </View>
+        <View style={[StyleSheet.absoluteFillObject, styles.fifaOverlay]}>
+          <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowLevelInfo(false)} />
+          <View style={[styles.fifaCard, { backgroundColor: card.cardBg }]}>
+            {/* Subtle inner glow border */}
+            <View style={[styles.fifaCardInner, { borderColor: card.accent + '40' }]}>
 
-            <View style={styles.levelInfoStats}>
-              <View style={styles.levelInfoStat}>
-                <Text style={styles.levelInfoStatValue}>{sessions30}</Text>
-                <Text style={styles.levelInfoStatLabel}>séances / mois</Text>
+              {/* Top band */}
+              <View style={styles.fifaTop}>
+                <View>
+                  <Text style={[styles.fifaOvr, { color: card.accent }]}>{card.ovr}</Text>
+                  <Text style={[styles.fifaTierLabel, { color: card.textOnCard }]}>{card.tierLabel}</Text>
+                  <Text style={[styles.fifaPos, { color: card.textOnCard + 'AA' }]}>{level.label.toUpperCase()}</Text>
+                </View>
+                <View style={[styles.fifaEmojiCircle, { borderColor: card.accent + '60', backgroundColor: card.accent + '18' }]}>
+                  <Text style={styles.fifaEmoji}>{level.emoji}</Text>
+                </View>
               </View>
-              <View style={styles.levelInfoStatDivider} />
-              <View style={styles.levelInfoStat}>
-                <Text style={styles.levelInfoStatValue}>
-                  {volume30 >= 1000 ? `${(volume30 / 1000).toFixed(1)}t` : `${Math.round(volume30)}kg`}
+
+              {/* Name */}
+              <Text style={[styles.fifaName, { color: card.accent }]} numberOfLines={1}>
+                {user?.displayName?.split(' ')[0]?.toUpperCase() ?? 'ATHLÈTE'}
+              </Text>
+
+              {/* Divider */}
+              <View style={[styles.fifaDivider, { backgroundColor: card.accent + '40' }]} />
+
+              {/* Stats */}
+              <View style={styles.fifaStats}>
+                {card.attributes.map((attr) => (
+                  <View key={attr.key} style={styles.fifaStat}>
+                    <Text style={[styles.fifaStatVal, { color: card.accent }]}>{attr.score}</Text>
+                    <Text style={[styles.fifaStatLabel, { color: card.textOnCard + 'AA' }]}>{attr.label}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Raw data row */}
+              <View style={[styles.fifaRawRow, { borderTopColor: card.accent + '20' }]}>
+                <Text style={[styles.fifaRaw, { color: card.textOnCard + '70' }]}>
+                  {sessions30} séances · {volume30 >= 1000 ? `${(volume30 / 1000).toFixed(1)}t` : `${Math.round(volume30)}kg`} · {streak} sem.
                 </Text>
-                <Text style={styles.levelInfoStatLabel}>volume ce mois</Text>
               </View>
             </View>
-
-            {nextLevel && (
-              <View style={styles.levelInfoProgress}>
-                <View style={styles.levelInfoProgressHeader}>
-                  <Text style={styles.levelInfoProgressLabel}>Vers {nextLevel.label} {nextLevel.emoji}</Text>
-                  <Text style={styles.levelInfoProgressCount}>
-                    {nextLevel.minSessions - sessions30} séance{nextLevel.minSessions - sessions30 > 1 ? 's' : ''} restante{nextLevel.minSessions - sessions30 > 1 ? 's' : ''}
-                  </Text>
-                </View>
-                <View style={styles.levelInfoProgressBar}>
-                  <View style={[styles.levelInfoProgressFill, { width: `${Math.round(progressToNext * 100)}%` as any, backgroundColor: level.color }]} />
-                </View>
-              </View>
-            )}
-
-            <Text style={styles.levelInfoAllTitle}>Tous les niveaux</Text>
-            {FITNESS_LEVELS.map((l) => (
-              <View key={l.id} style={[styles.levelInfoRow, l.id === level.id && { backgroundColor: l.color + '18' }]}>
-                <Text style={styles.levelInfoRowEmoji}>{l.emoji}</Text>
-                <Text style={[styles.levelInfoRowName, { color: l.id === level.id ? l.color : theme.colors.text }]}>{l.label}</Text>
-                <Text style={styles.levelInfoRowReq}>{l.minSessions === 0 ? '< 2 séances' : `${l.minSessions}+ séances/mois`}</Text>
-                {l.id === level.id && <View style={[styles.levelInfoRowDot, { backgroundColor: l.color }]} />}
-              </View>
-            ))}
-          </ScrollView>
+          </View>
         </View>
       )}
 
@@ -424,53 +417,41 @@ const styles = StyleSheet.create({
   },
   signInText: { fontSize: 13, fontWeight: '600', color: theme.colors.primary },
   levelChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderRadius: theme.radius.full, paddingHorizontal: 8, paddingVertical: 4,
-    borderWidth: 1,
+    alignItems: 'center', borderRadius: 6,
+    paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, minWidth: 48,
   },
-  levelChipEmoji: { fontSize: 12 },
-  levelChipText: { fontSize: 12, fontWeight: '700' },
-  levelInfoOverlay: { backgroundColor: theme.colors.background, zIndex: 100 },
-  levelInfoHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: theme.spacing.md, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+  levelChipOvr: { fontSize: 16, fontWeight: '900', lineHeight: 18 },
+  levelChipTier: { fontSize: 8, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 1 },
+  // FIFA card overlay
+  fifaOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.80)', zIndex: 100,
+    alignItems: 'center', justifyContent: 'center',
   },
-  levelInfoTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text },
-  levelInfoContent: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md, paddingBottom: 32 },
-  levelInfoCard: {
-    alignItems: 'center', padding: 28, borderRadius: theme.radius.lg,
-    borderWidth: 2, marginBottom: theme.spacing.md,
+  fifaCard: {
+    width: 260, borderRadius: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.6, shadowRadius: 30, elevation: 30,
   },
-  levelInfoEmoji: { fontSize: 52, marginBottom: 8 },
-  levelInfoName: { fontSize: 26, fontWeight: '800', marginBottom: 4 },
-  levelInfoCardSub: { fontSize: 14, color: theme.colors.textSecondary },
-  levelInfoStats: {
-    flexDirection: 'row', backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.md, marginBottom: theme.spacing.md, overflow: 'hidden',
+  fifaCardInner: {
+    borderRadius: 12, borderWidth: 1, overflow: 'hidden',
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
   },
-  levelInfoStat: { flex: 1, alignItems: 'center', padding: 16 },
-  levelInfoStatValue: { fontSize: 22, fontWeight: '800', color: theme.colors.text },
-  levelInfoStatLabel: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
-  levelInfoStatDivider: { width: 1, backgroundColor: theme.colors.border },
-  levelInfoProgress: {
-    backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
-    padding: 16, marginBottom: theme.spacing.md,
+  fifaTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  fifaOvr: { fontSize: 52, fontWeight: '900', lineHeight: 52 },
+  fifaTierLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginTop: 2 },
+  fifaPos: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginTop: 2 },
+  fifaEmojiCircle: {
+    width: 68, height: 68, borderRadius: 34, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
   },
-  levelInfoProgressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  levelInfoProgressLabel: { fontSize: 14, fontWeight: '600', color: theme.colors.text },
-  levelInfoProgressCount: { fontSize: 13, color: theme.colors.textMuted },
-  levelInfoProgressBar: { height: 6, backgroundColor: theme.colors.border, borderRadius: 3, overflow: 'hidden' },
-  levelInfoProgressFill: { height: 6, borderRadius: 3 },
-  levelInfoAllTitle: {
-    fontSize: 11, fontWeight: '700', color: theme.colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8,
-  },
-  levelInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: theme.radius.md, marginBottom: 4 },
-  levelInfoRowEmoji: { fontSize: 18, width: 24, textAlign: 'center' },
-  levelInfoRowName: { fontSize: 14, fontWeight: '600', flex: 1 },
-  levelInfoRowReq: { fontSize: 12, color: theme.colors.textMuted },
-  levelInfoRowDot: { width: 8, height: 8, borderRadius: 4 },
+  fifaEmoji: { fontSize: 36 },
+  fifaName: { fontSize: 22, fontWeight: '900', letterSpacing: 1.5, textAlign: 'center', marginBottom: 12 },
+  fifaDivider: { height: 1, marginBottom: 14 },
+  fifaStats: { flexDirection: 'row', justifyContent: 'space-between' },
+  fifaStat: { alignItems: 'center', flex: 1 },
+  fifaStatVal: { fontSize: 18, fontWeight: '800' },
+  fifaStatLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginTop: 2, textTransform: 'uppercase' },
+  fifaRawRow: { marginTop: 14, paddingTop: 10, borderTopWidth: 1, alignItems: 'center' },
+  fifaRaw: { fontSize: 10 },
   startButton: {
     backgroundColor: theme.colors.primary, borderRadius: theme.radius.lg,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
