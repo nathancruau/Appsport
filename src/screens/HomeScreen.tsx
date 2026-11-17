@@ -1,20 +1,24 @@
 import React, { useCallback, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  StatusBar, ActivityIndicator, ScrollView, Modal, Image, Animated,
+  StatusBar, ActivityIndicator, ScrollView, Modal, Image, Animated, PanResponder,
 } from 'react-native';
-import Svg, { Polygon, Line, Circle, Text as SvgText } from 'react-native-svg';
+import Svg, {
+  Polygon, Line, Circle, Text as SvgText,
+  Rect as SvgRect, Defs, LinearGradient as SvgLinearGradient,
+  Stop, Path as SvgPath, Ellipse as SvgEllipse,
+} from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { RootStackParamList, Workout, WorkoutTemplate } from '../types';
-import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings, getPausedWorkout, getTrainingStreak, getMuscleGroupStats90, saveFitnessCardOvr, loadFitnessCardOvr } from '../database/database';
+import { getRecentWorkouts, getTemplates, deleteTemplate, getRestTimerSettings, saveRestTimerSettings, RestTimerSettings, getPausedWorkout, getTrainingStreak, getMuscleGroupStats90, saveFitnessCardOvr, loadFitnessCardOvr, saveFitnessTier, loadFitnessTier } from '../database/database';
 import { formatDate, formatDuration, parseLocalDate } from '../utils/calculations';
 import { useAuth } from '../context/AuthContext';
 import { version } from '../../package.json';
-import { computeFitnessLevel } from '../utils/fitnessLevel'; // still used for level.emoji + level.label in FIFA card
+import { computeFitnessLevel } from '../utils/fitnessLevel';
 import { computeFitnessCardFromMuscles, FitnessCard } from '../utils/fitnessCard';
 import { drawFavicon } from '../utils/drawFavicon';
 
@@ -41,12 +45,49 @@ export default function HomeScreen({ navigation }: Props) {
   const [muscleCard, setMuscleCard] = useState<FitnessCard | null>(null);
   const flipAnim = useRef(new Animated.Value(0)).current;
   const [cardFlipped, setCardFlipped] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [tierUpLabel, setTierUpLabel] = useState('');
+  const confettiParticles = useRef(
+    Array.from({ length: 22 }, (_, i) => ({
+      x: new Animated.Value(0),
+      y: new Animated.Value(0),
+      opacity: new Animated.Value(0),
+      rotate: new Animated.Value(0),
+      color: ['#FFD700', '#FF4444', '#44DD44', '#4488FF', '#FF88CC', '#FF8C00', '#CC44FF'][i % 7],
+      size: 7 + (i % 4) * 2,
+    }))
+  ).current;
+
+  const launchConfetti = () => {
+    confettiParticles.forEach((p, i) => {
+      const angle = (i / 22) * Math.PI * 2;
+      const dist = 90 + (i % 5) * 28;
+      p.x.setValue(0); p.y.setValue(0); p.opacity.setValue(1); p.rotate.setValue(0);
+      Animated.parallel([
+        Animated.timing(p.x, { toValue: Math.cos(angle) * dist, duration: 1300, useNativeDriver: true }),
+        Animated.sequence([
+          Animated.timing(p.y, { toValue: -(70 + (i % 4) * 35), duration: 520, useNativeDriver: true }),
+          Animated.timing(p.y, { toValue: 320, duration: 780, useNativeDriver: true }),
+        ]),
+        Animated.timing(p.rotate, { toValue: 480 + (i % 3) * 240, duration: 1300, useNativeDriver: true }),
+        Animated.sequence([
+          Animated.delay(750),
+          Animated.timing(p.opacity, { toValue: 0, duration: 550, useNativeDriver: true }),
+        ]),
+      ]).start();
+    });
+    setTimeout(() => setShowConfetti(false), 2800);
+  };
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       setLoading(true);
-      Promise.all([getRecentWorkouts(50), getTemplates(), getRestTimerSettings(), getPausedWorkout(), getTrainingStreak(), getMuscleGroupStats90(), loadFitnessCardOvr()]).then(([data, tmpl, settings, paused, str, mgStats, prevOvr]) => {
+      Promise.all([
+        getRecentWorkouts(50), getTemplates(), getRestTimerSettings(),
+        getPausedWorkout(), getTrainingStreak(),
+        getMuscleGroupStats90(), loadFitnessCardOvr(), loadFitnessTier(),
+      ]).then(([data, tmpl, settings, paused, str, mgStats, prevOvr, prevTier]) => {
         if (!active) return;
         const cutoff30 = new Date(); cutoff30.setDate(cutoff30.getDate() - 30); cutoff30.setHours(0, 0, 0, 0);
         const recent30 = (data as WorkoutItem[]).filter((w) => parseLocalDate(w.date) >= cutoff30);
@@ -59,6 +100,8 @@ export default function HomeScreen({ navigation }: Props) {
         const thisWeek = (data as WorkoutItem[]).filter((w) => parseLocalDate(w.date) >= monday);
         const newCard = computeFitnessCardFromMuscles(mgStats as any);
         const delta = prevOvr != null ? newCard.ovr - (prevOvr as number) : null;
+        const TIER_ORDER: Record<string, number> = { bronze: 0, silver: 1, gold: 2, elite: 3, toty: 4 };
+        const tierImproved = prevTier && TIER_ORDER[newCard.tier] > (TIER_ORDER[prevTier as string] ?? -1);
         setWorkouts((data as WorkoutItem[]).slice(0, 5));
         setTemplates(tmpl as any);
         setAppSettings(settings as any);
@@ -71,6 +114,12 @@ export default function HomeScreen({ navigation }: Props) {
         setOvrDelta(delta);
         drawFavicon(count30, vol30);
         saveFitnessCardOvr(newCard.ovr);
+        saveFitnessTier(newCard.tier);
+        if (tierImproved) {
+          setTierUpLabel(newCard.tierLabel);
+          setShowConfetti(true);
+          launchConfetti();
+        }
         setLoading(false);
       });
       return () => { active = false; };
@@ -92,7 +141,6 @@ export default function HomeScreen({ navigation }: Props) {
   };
 
   const thisWeekCount = sessions7;
-
   const level = computeFitnessLevel(sessions30);
   const card = muscleCard ?? { ovr: 0, tier: 'bronze' as const, tierLabel: 'BRONZE', cardBg: '#160C04', accent: '#B07040', textOnCard: '#D49060', attributes: [], radarData: [] };
 
@@ -155,14 +203,20 @@ export default function HomeScreen({ navigation }: Props) {
     flipAnim.setValue(0);
   };
 
+  const swipePan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 12 && Math.abs(gs.dx) > Math.abs(gs.dy),
+      onPanResponderRelease: (_, gs) => { if (Math.abs(gs.dx) > 44) flipCard(); },
+    })
+  ).current;
+
   const frontRotate = flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
   const backRotate = flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '360deg'] });
 
   const renderRadarChart = (data: { label: string; value: number }[], accentColor: string, textColor: string) => {
     if (data.length < 3) return null;
-    const SIZE = 220;
-    const CENTER = SIZE / 2;
-    const RADIUS = 76;
+    const SIZE = 220; const CENTER = SIZE / 2; const RADIUS = 76;
     const n = data.length;
     const angles = data.map((_, i) => (Math.PI * 2 * i) / n - Math.PI / 2);
     const pts = data.map((d, i) => ({
@@ -170,22 +224,15 @@ export default function HomeScreen({ navigation }: Props) {
       y: CENTER + (d.value / 100) * RADIUS * Math.sin(angles[i]),
     }));
     const polygon = pts.map((p) => `${p.x},${p.y}`).join(' ');
-    const grids = [25, 50, 75, 100].map((pct) => {
-      const r = (pct / 100) * RADIUS;
-      return angles.map((a) => `${CENTER + r * Math.cos(a)},${CENTER + r * Math.sin(a)}`).join(' ');
-    });
+    const grids = [25, 50, 75, 100].map((pct) =>
+      angles.map((a) => { const r = (pct / 100) * RADIUS; return `${CENTER + r * Math.cos(a)},${CENTER + r * Math.sin(a)}`; }).join(' ')
+    );
     return (
       <Svg width={SIZE} height={SIZE}>
-        {grids.map((gp, gi) => (
-          <Polygon key={gi} points={gp} fill="none" stroke={accentColor + '25'} strokeWidth={0.8} />
-        ))}
-        {angles.map((a, i) => (
-          <Line key={i} x1={CENTER} y1={CENTER} x2={CENTER + RADIUS * Math.cos(a)} y2={CENTER + RADIUS * Math.sin(a)} stroke={accentColor + '30'} strokeWidth={0.8} />
-        ))}
+        {grids.map((gp, gi) => <Polygon key={gi} points={gp} fill="none" stroke={accentColor + '25'} strokeWidth={0.8} />)}
+        {angles.map((a, i) => <Line key={i} x1={CENTER} y1={CENTER} x2={CENTER + RADIUS * Math.cos(a)} y2={CENTER + RADIUS * Math.sin(a)} stroke={accentColor + '30'} strokeWidth={0.8} />)}
         <Polygon points={polygon} fill={accentColor + '28'} stroke={accentColor} strokeWidth={2} />
-        {pts.map((p, i) => (
-          <Circle key={i} cx={p.x} cy={p.y} r={4} fill={accentColor} />
-        ))}
+        {pts.map((p, i) => <Circle key={i} cx={p.x} cy={p.y} r={4} fill={accentColor} />)}
         {data.map((d, i) => {
           const lr = RADIUS + 20;
           const lx = CENTER + lr * Math.cos(angles[i]);
@@ -197,6 +244,76 @@ export default function HomeScreen({ navigation }: Props) {
             </React.Fragment>
           );
         })}
+      </Svg>
+    );
+  };
+
+  const renderMedal = (tier: FitnessCard['tier'], accent: string) => {
+    type Cfg = { medal: string; r1: string; r2: string; stars: number; shine: string };
+    const cfgs: Record<string, Cfg> = {
+      bronze: { medal: '#CD7F32', r1: '#7A3A0A', r2: '#A05020', stars: 1, shine: '#E8A87C' },
+      silver: { medal: '#C0C0C0', r1: '#3A5A7A', r2: '#5080A0', stars: 2, shine: '#E8E8E8' },
+      gold:   { medal: '#D4AF37', r1: '#8B1A1A', r2: '#BB2222', stars: 3, shine: '#FFE566' },
+      elite:  { medal: '#9B59B6', r1: '#4A1A70', r2: '#7030A0', stars: 4, shine: '#D088FF' },
+      toty:   { medal: '#E8C842', r1: '#7A5800', r2: '#A07820', stars: 5, shine: '#FFF5A0' },
+    };
+    const c = cfgs[tier] ?? cfgs.bronze;
+    const W = 130; const H = 150; const cx = W / 2;
+    const medalY = 108; const R = 36;
+    const starPath = (sx: number, sy: number, r: number) => {
+      const pts: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const a = (i * Math.PI) / 5 - Math.PI / 2;
+        const rr = i % 2 === 0 ? r : r * 0.42;
+        pts.push(`${sx + rr * Math.cos(a)},${sy + rr * Math.sin(a)}`);
+      }
+      return pts.join(' ');
+    };
+    const totalStarW = c.stars * 18 - 2;
+    return (
+      <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+        <SvgRect x={cx - 12} y={0} width={10} height={70} rx={2} fill={c.r1} />
+        <SvgRect x={cx + 2} y={0} width={10} height={70} rx={2} fill={c.r2} />
+        <SvgEllipse cx={cx} cy={70} rx={15} ry={7} fill={c.r1} />
+        <Circle cx={cx} cy={medalY} r={R + 6} fill={c.medal + '30'} />
+        <Circle cx={cx} cy={medalY} r={R} fill={c.medal} />
+        <Circle cx={cx} cy={medalY} r={R - 5} fill="none" stroke={c.shine} strokeWidth={2} opacity={0.5} />
+        <Circle cx={cx} cy={medalY} r={R - 11} fill={c.medal + 'CC'} />
+        {Array.from({ length: c.stars }, (_, i) => {
+          const sx = cx - totalStarW / 2 + 9 + i * 18;
+          return <Polygon key={i} points={starPath(sx, medalY, 7)} fill={c.shine} />;
+        })}
+      </Svg>
+    );
+  };
+
+  const renderFifaBg = (tier: FitnessCard['tier'], accent: string) => {
+    const gradients: Record<string, [string, string, string]> = {
+      bronze: ['#2A0A00', '#7A3810', '#B06030'],
+      silver: ['#0A1420', '#1E3A54', '#4A6A80'],
+      gold:   ['#1E1000', '#6A4800', '#B08020'],
+      elite:  ['#080216', '#250850', '#4A1888'],
+      toty:   ['#000408', '#080F28', '#141E48'],
+    };
+    const [c1, c2, c3] = gradients[tier] ?? gradients.bronze;
+    return (
+      <Svg style={StyleSheet.absoluteFillObject as any} width="280" height="380">
+        <Defs>
+          <SvgLinearGradient id={`bg_${tier}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor={c1} />
+            <Stop offset="50%" stopColor={c2} />
+            <Stop offset="100%" stopColor={c3} />
+          </SvgLinearGradient>
+        </Defs>
+        <SvgRect width="280" height="380" fill={`url(#bg_${tier})`} rx={16} />
+        <SvgPath d="M 280 0 L 100 0 L 280 170 Z" fill={accent + '12'} />
+        <SvgPath d="M 280 0 L 170 0 L 280 90 Z" fill={accent + '18'} />
+        {[0,1,2,3].flatMap(row => [0,1,2,3].map(col => (
+          <SvgText key={`tl${row}${col}`} x={8+col*17} y={17+row*17} fill={accent+'22'} fontSize={12} textAnchor="middle">+</SvgText>
+        )))}
+        {[0,1,2,3].flatMap(row => [0,1,2,3].map(col => (
+          <SvgText key={`tr${row}${col}`} x={212+col*17} y={17+row*17} fill={accent+'22'} fontSize={12} textAnchor="middle">+</SvgText>
+        )))}
       </Svg>
     );
   };
@@ -325,7 +442,7 @@ export default function HomeScreen({ navigation }: Props) {
         </>
       )}
 
-      {/* Custom alert (Alert.alert bloqué en PWA) */}
+      {/* Custom alert */}
       {alertModal && (
         <Modal visible={true} transparent animationType="fade">
           <View style={styles.alertOverlay}>
@@ -355,76 +472,109 @@ export default function HomeScreen({ navigation }: Props) {
         <View style={[StyleSheet.absoluteFillObject, styles.fifaOverlay]}>
           <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={handleCloseCard} />
 
-          {/* Card container */}
-          <View style={{ width: 260, alignItems: 'center' }}>
+          <View style={{ alignItems: 'center', gap: 14 }} {...swipePan.panHandlers}>
 
             {/* Front face */}
             <Animated.View
-              style={[styles.fifaCard, { backgroundColor: card.cardBg, transform: [{ rotateY: frontRotate }], backfaceVisibility: 'hidden' }]}
+              style={[styles.fifaCard, { transform: [{ rotateY: frontRotate }], backfaceVisibility: 'hidden' }]}
               pointerEvents={cardFlipped ? 'none' : 'auto'}
             >
-              <View style={[styles.fifaCardInner, { borderColor: card.accent + '40' }]}>
-                <View style={[styles.fifaShimmer, { backgroundColor: card.accent + '08' }]} />
-                <View style={styles.fifaTop}>
-                  <View>
-                    <Text style={[styles.fifaOvr, { color: card.accent }]}>{card.ovr}</Text>
-                    <Text style={[styles.fifaTierLabel, { color: card.textOnCard }]}>{card.tierLabel}</Text>
-                    <Text style={[styles.fifaPos, { color: card.textOnCard + 'AA' }]}>{level.label.toUpperCase()}</Text>
-                  </View>
-                  <View style={[styles.fifaEmojiCircle, { borderColor: card.accent + '60', backgroundColor: card.accent + '18' }]}>
-                    <Text style={styles.fifaEmoji}>{level.emoji}</Text>
+              {renderFifaBg(card.tier, card.accent)}
+              <View style={styles.fifaTopSection}>
+                <View style={styles.fifaLeftCol}>
+                  <Text style={[styles.fifaOvr, { color: card.accent }]}>{card.ovr}</Text>
+                  <Text style={[styles.fifaTierLabel, { color: card.textOnCard }]}>{card.tierLabel}</Text>
+                  <Text style={[styles.fifaPos, { color: card.textOnCard + 'AA' }]}>{level.label.toUpperCase()}</Text>
+                  <View style={{ marginTop: 10 }}>
+                    <Svg width={34} height={20}>
+                      <SvgRect x={0} y={6} width={34} height={8} rx={2} fill={card.accent + '50'} />
+                      <SvgRect x={0} y={2} width={7} height={16} rx={2} fill={card.accent} />
+                      <SvgRect x={27} y={2} width={7} height={16} rx={2} fill={card.accent} />
+                    </Svg>
                   </View>
                 </View>
+                <View style={styles.fifaMedalArea}>
+                  {renderMedal(card.tier, card.accent)}
+                </View>
+              </View>
+
+              <View style={styles.fifaNameBand}>
                 <Text style={[styles.fifaName, { color: card.accent }]} numberOfLines={1}>
                   {user?.displayName?.split(' ')[0]?.toUpperCase() ?? 'ATHLÈTE'}
                 </Text>
-                <View style={[styles.fifaDivider, { backgroundColor: card.accent + '40' }]} />
-                <View style={styles.fifaStats}>
-                  {card.attributes.map((attr) => (
-                    <View key={attr.key} style={styles.fifaStat}>
+              </View>
+
+              <View style={styles.fifaStatsGrid}>
+                <View style={styles.fifaStatsCol}>
+                  {card.attributes.slice(0, 3).map((attr) => (
+                    <View key={attr.key} style={styles.fifaStatRow}>
                       <Text style={[styles.fifaStatVal, { color: card.accent }]}>{attr.score}</Text>
                       <Text style={[styles.fifaStatLabel, { color: card.textOnCard + 'AA' }]}>{attr.label}</Text>
                     </View>
                   ))}
                 </View>
-                <View style={[styles.fifaRawRow, { borderTopColor: card.accent + '20' }]}>
-                  <Text style={[styles.fifaRaw, { color: card.textOnCard + '70' }]}>
-                    {sessions30} séances · {volume30 >= 1000 ? `${(volume30 / 1000).toFixed(1)}t` : `${Math.round(volume30)}kg`} · {streak} sem.
-                  </Text>
+                <View style={[styles.fifaStatsDivider, { backgroundColor: card.accent + '30' }]} />
+                <View style={styles.fifaStatsCol}>
+                  {card.attributes.slice(3, 6).map((attr) => (
+                    <View key={attr.key} style={styles.fifaStatRow}>
+                      <Text style={[styles.fifaStatVal, { color: card.accent }]}>{attr.score}</Text>
+                      <Text style={[styles.fifaStatLabel, { color: card.textOnCard + 'AA' }]}>{attr.label}</Text>
+                    </View>
+                  ))}
                 </View>
-                <TouchableOpacity style={[styles.fifaFlipHint, { borderColor: card.accent + '30' }]} onPress={flipCard}>
-                  <Text style={[styles.fifaFlipHintText, { color: card.textOnCard + '60' }]}>↺ Radar</Text>
-                </TouchableOpacity>
               </View>
+
+              <Text style={[styles.fifaSwipeHint, { color: card.textOnCard + '50' }]}>← glisser pour radar →</Text>
             </Animated.View>
 
-            {/* Back face (radar chart) */}
+            {/* Back face (radar) */}
             <Animated.View
-              style={[styles.fifaCard, styles.fifaCardBack, { backgroundColor: card.cardBg, transform: [{ rotateY: backRotate }], backfaceVisibility: 'hidden' }]}
+              style={[styles.fifaCard, styles.fifaCardBack, { transform: [{ rotateY: backRotate }], backfaceVisibility: 'hidden' }]}
               pointerEvents={cardFlipped ? 'auto' : 'none'}
             >
-              <View style={[styles.fifaCardInner, { borderColor: card.accent + '40', paddingBottom: 12 }]}>
-                <View style={styles.fifaShimmer2} />
+              {renderFifaBg(card.tier, card.accent)}
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 10 }}>
                 <Text style={[styles.fifaBackTitle, { color: card.textOnCard + '80' }]}>ANALYSE MUSCULAIRE</Text>
-                <View style={{ alignItems: 'center', marginTop: 4 }}>
-                  {card.radarData.length >= 3
-                    ? renderRadarChart(card.radarData, card.accent, card.textOnCard)
-                    : <Text style={[styles.fifaNoData, { color: card.textOnCard + '60' }]}>Pas assez de données</Text>
-                  }
-                </View>
-                <TouchableOpacity style={[styles.fifaFlipHint, { borderColor: card.accent + '30', marginTop: 4 }]} onPress={flipCard}>
-                  <Text style={[styles.fifaFlipHintText, { color: card.textOnCard + '60' }]}>↺ Carte</Text>
-                </TouchableOpacity>
+                {card.radarData.length >= 3
+                  ? renderRadarChart(card.radarData, card.accent, card.textOnCard)
+                  : <Text style={[styles.fifaNoData, { color: card.textOnCard + '60' }]}>Pas assez de données</Text>
+                }
+                <Text style={[styles.fifaSwipeHint, { color: card.textOnCard + '50', marginTop: 4 }]}>← glisser pour revenir →</Text>
               </View>
             </Animated.View>
 
           </View>
 
-          {/* Score delta */}
           {ovrDelta !== null && Math.abs(ovrDelta) >= 0.5 && (
             <Text style={styles.fifaDelta}>
               {ovrDelta > 0 ? `+${ovrDelta.toFixed(1)}` : ovrDelta.toFixed(1)} depuis la dernière séance
             </Text>
+          )}
+
+          {/* Confetti tier-up */}
+          {showConfetti && (
+            <View style={[StyleSheet.absoluteFillObject, { pointerEvents: 'none' as any, alignItems: 'center', justifyContent: 'center' }]}>
+              <View style={styles.tierUpBanner}>
+                <Text style={styles.tierUpText}>🎉 Nouveau tier : {tierUpLabel} !</Text>
+              </View>
+              {confettiParticles.map((p, i) => (
+                <Animated.View
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    width: p.size, height: p.size,
+                    backgroundColor: p.color,
+                    borderRadius: p.size / 4,
+                    transform: [
+                      { translateX: p.x },
+                      { translateY: p.y },
+                      { rotate: p.rotate.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'] }) },
+                    ],
+                    opacity: p.opacity,
+                  }}
+                />
+              ))}
+            </View>
           )}
         </View>
       )}
@@ -531,54 +681,53 @@ const styles = StyleSheet.create({
   levelChipTier: { fontSize: 8, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 1 },
   // FIFA card overlay
   fifaOverlay: {
-    backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 100,
-    alignItems: 'center', justifyContent: 'center', gap: 14,
+    backgroundColor: 'rgba(0,0,0,0.88)', zIndex: 100,
+    alignItems: 'center', justifyContent: 'center', gap: 16,
   },
   fifaCard: {
-    width: 260, borderRadius: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 24 }, shadowOpacity: 0.7, shadowRadius: 36, elevation: 36,
+    width: 280, height: 380, borderRadius: 16, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 24 }, shadowOpacity: 0.75, shadowRadius: 40, elevation: 40,
   },
   fifaCardBack: {
-    position: 'absolute', top: 0, left: 0, right: 0,
+    position: 'absolute', top: 0, left: 0,
   },
-  fifaCardInner: {
-    borderRadius: 16, borderWidth: 1, overflow: 'hidden',
-    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 14,
+  fifaTopSection: {
+    flexDirection: 'row', height: 220, paddingTop: 14,
   },
-  fifaShimmer: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: 100,
-    borderTopLeftRadius: 16, borderTopRightRadius: 16,
+  fifaLeftCol: {
+    width: 72, paddingLeft: 14, paddingTop: 2,
   },
-  fifaShimmer2: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 16,
+  fifaOvr: { fontSize: 54, fontWeight: '900', lineHeight: 54 },
+  fifaTierLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.6, marginTop: 2 },
+  fifaPos: { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginTop: 2 },
+  fifaMedalArea: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingRight: 10,
   },
-  fifaTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  fifaOvr: { fontSize: 56, fontWeight: '900', lineHeight: 56 },
-  fifaTierLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1.8, marginTop: 2 },
-  fifaPos: { fontSize: 10, fontWeight: '700', letterSpacing: 1, marginTop: 2 },
-  fifaEmojiCircle: {
-    width: 72, height: 72, borderRadius: 36, borderWidth: 1.5,
-    alignItems: 'center', justifyContent: 'center',
+  fifaNameBand: {
+    backgroundColor: 'rgba(0,0,0,0.72)', height: 40,
+    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 12,
   },
-  fifaEmoji: { fontSize: 38 },
-  fifaName: { fontSize: 22, fontWeight: '900', letterSpacing: 2, textAlign: 'center', marginBottom: 12 },
-  fifaDivider: { height: 1, marginBottom: 14 },
-  fifaStats: { flexDirection: 'row', justifyContent: 'space-between' },
-  fifaStat: { alignItems: 'center', flex: 1 },
-  fifaStatVal: { fontSize: 20, fontWeight: '900' },
-  fifaStatLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginTop: 2, textTransform: 'uppercase' },
-  fifaRawRow: { marginTop: 12, paddingTop: 10, borderTopWidth: 1, alignItems: 'center' },
-  fifaRaw: { fontSize: 10 },
-  fifaFlipHint: {
-    marginTop: 10, paddingVertical: 5, paddingHorizontal: 14,
-    borderRadius: 20, borderWidth: 1, alignSelf: 'center',
+  fifaName: { fontSize: 21, fontWeight: '900', letterSpacing: 2 },
+  fifaStatsGrid: {
+    flex: 1, flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10,
   },
-  fifaFlipHintText: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
-  fifaBackTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, textAlign: 'center', marginBottom: 2 },
+  fifaStatsCol: { flex: 1, justifyContent: 'space-around' },
+  fifaStatsDivider: { width: 1, marginVertical: 4 },
+  fifaStatRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  fifaStatVal: { fontSize: 20, fontWeight: '900', width: 30 },
+  fifaStatLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
+  fifaSwipeHint: { fontSize: 10, textAlign: 'center', paddingBottom: 8 },
+  fifaBackTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, textAlign: 'center', marginBottom: 4 },
   fifaNoData: { fontSize: 13, fontStyle: 'italic', textAlign: 'center', paddingVertical: 40 },
   fifaDelta: { fontSize: 13, color: '#8BC34A', fontWeight: '600', letterSpacing: 0.3, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  tierUpBanner: {
+    position: 'absolute', top: 60, alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.85)', borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10,
+    borderWidth: 1, borderColor: '#FFD70060',
+  },
+  tierUpText: { color: '#FFD700', fontSize: 16, fontWeight: '800', textAlign: 'center' },
   startButton: {
     backgroundColor: theme.colors.primary, borderRadius: theme.radius.lg,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -595,7 +744,6 @@ const styles = StyleSheet.create({
     fontSize: 12, fontWeight: '700', color: theme.colors.textSecondary,
     marginBottom: theme.spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5,
   },
-  // Template chips
   templateChip: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: theme.colors.card, borderRadius: theme.radius.full,
@@ -604,7 +752,6 @@ const styles = StyleSheet.create({
   },
   templateChipMain: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingRight: 2 },
   templateChipText: { fontSize: 11, fontWeight: '600', color: theme.colors.text },
-  // Cards
   card: {
     backgroundColor: theme.colors.card, borderRadius: theme.radius.md,
     marginBottom: theme.spacing.sm, flexDirection: 'row', overflow: 'hidden',
@@ -620,7 +767,6 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: theme.colors.text, marginTop: 16, marginBottom: 8 },
   emptyText: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 20 },
-  // Alert
   alertOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 32 },
   alertBox: { backgroundColor: theme.colors.card, borderRadius: theme.radius.lg, padding: 20, width: '100%', maxWidth: 340 },
   alertTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text, textAlign: 'center', marginBottom: 6 },
@@ -629,7 +775,6 @@ const styles = StyleSheet.create({
   alertBtn: { paddingVertical: 12, borderRadius: theme.radius.md, backgroundColor: theme.colors.inputBackground, alignItems: 'center' },
   alertBtnDestructive: { backgroundColor: '#FFF0F0' },
   alertBtnText: { fontSize: 15, fontWeight: '600', color: theme.colors.text },
-  // Settings overlay
   settingsOverlay: { backgroundColor: theme.colors.background, zIndex: 100 },
   settingsHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

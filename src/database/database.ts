@@ -880,3 +880,13 @@ export async function loadFitnessCardOvr(): Promise<number | null> {
   const v = await AsyncStorage.getItem(KEY_FITNESS_OVR);
   return v != null ? parseFloat(v) : null;
 }
+
+const KEY_FITNESS_TIER = '@appsport_fitness_tier';
+
+export async function saveFitnessTier(tier: string): Promise<void> {
+  await AsyncStorage.setItem(KEY_FITNESS_TIER, tier);
+}
+
+export async function loadFitnessTier(): Promise<string | null> {
+  return AsyncStorage.getItem(KEY_FITNESS_TIER);
+}

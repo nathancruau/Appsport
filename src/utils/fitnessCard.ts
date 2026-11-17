@@ -69,7 +69,7 @@ export function computeFitnessCardFromMuscles(
   const ovr = scored.length === 0 ? 0 : clamp(scored.reduce((s, x) => s + x.score, 0) / scored.length);
   const t = TIERS.find((x) => ovr >= x.min) ?? TIERS[TIERS.length - 1];
 
-  const topAttrs = [...scored].sort((a, b) => (muscleStats[b.key]?.sessions ?? 0) - (muscleStats[a.key]?.sessions ?? 0)).slice(0, 5);
+  const topAttrs = [...scored].sort((a, b) => (muscleStats[b.key]?.sessions ?? 0) - (muscleStats[a.key]?.sessions ?? 0)).slice(0, 6);
   const radarData = scored.map((x) => ({ label: x.label, value: x.score }));
 
   return {
