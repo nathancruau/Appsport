@@ -258,8 +258,8 @@ export default function HomeScreen({ navigation }: Props) {
       toty:   { medal: '#E8C842', r1: '#7A5800', r2: '#A07820', stars: 5, shine: '#FFF5A0' },
     };
     const c = cfgs[tier] ?? cfgs.bronze;
-    const W = 130; const H = 150; const cx = W / 2;
-    const medalY = 108; const R = 36;
+    const W = 170; const H = 190; const cx = W / 2;
+    const medalY = 136; const R = 46;
     const starPath = (sx: number, sy: number, r: number) => {
       const pts: string[] = [];
       for (let i = 0; i < 10; i++) {
@@ -272,9 +272,9 @@ export default function HomeScreen({ navigation }: Props) {
     const totalStarW = c.stars * 18 - 2;
     return (
       <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-        <SvgRect x={cx - 12} y={0} width={10} height={70} rx={2} fill={c.r1} />
-        <SvgRect x={cx + 2} y={0} width={10} height={70} rx={2} fill={c.r2} />
-        <SvgEllipse cx={cx} cy={70} rx={15} ry={7} fill={c.r1} />
+        <SvgRect x={cx - 12} y={0} width={10} height={88} rx={2} fill={c.r1} />
+        <SvgRect x={cx + 2} y={0} width={10} height={88} rx={2} fill={c.r2} />
+        <SvgEllipse cx={cx} cy={88} rx={16} ry={8} fill={c.r1} />
         <Circle cx={cx} cy={medalY} r={R + 6} fill={c.medal + '30'} />
         <Circle cx={cx} cy={medalY} r={R} fill={c.medal} />
         <Circle cx={cx} cy={medalY} r={R - 5} fill="none" stroke={c.shine} strokeWidth={2} opacity={0.5} />
@@ -297,24 +297,26 @@ export default function HomeScreen({ navigation }: Props) {
     };
     const [c1, c2, c3] = gradients[tier] ?? gradients.bronze;
     return (
-      <Svg style={StyleSheet.absoluteFillObject as any} width="280" height="380">
-        <Defs>
-          <SvgLinearGradient id={`bg_${tier}`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor={c1} />
-            <Stop offset="50%" stopColor={c2} />
-            <Stop offset="100%" stopColor={c3} />
-          </SvgLinearGradient>
-        </Defs>
-        <SvgRect width="280" height="380" fill={`url(#bg_${tier})`} rx={16} />
-        <SvgPath d="M 280 0 L 100 0 L 280 170 Z" fill={accent + '12'} />
-        <SvgPath d="M 280 0 L 170 0 L 280 90 Z" fill={accent + '18'} />
-        {[0,1,2,3].flatMap(row => [0,1,2,3].map(col => (
-          <SvgText key={`tl${row}${col}`} x={8+col*17} y={17+row*17} fill={accent+'22'} fontSize={12} textAnchor="middle">+</SvgText>
-        )))}
-        {[0,1,2,3].flatMap(row => [0,1,2,3].map(col => (
-          <SvgText key={`tr${row}${col}`} x={212+col*17} y={17+row*17} fill={accent+'22'} fontSize={12} textAnchor="middle">+</SvgText>
-        )))}
-      </Svg>
+      <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+        <Svg width={280} height={390} style={StyleSheet.absoluteFillObject as any}>
+          <Defs>
+            <SvgLinearGradient id={`bg_${tier}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <Stop offset="0%" stopColor={c1} />
+              <Stop offset="50%" stopColor={c2} />
+              <Stop offset="100%" stopColor={c3} />
+            </SvgLinearGradient>
+          </Defs>
+          <SvgRect width="280" height="390" fill={`url(#bg_${tier})`} rx={16} />
+          <SvgPath d="M 280 0 L 90 0 L 280 180 Z" fill={accent + '12'} />
+          <SvgPath d="M 280 0 L 160 0 L 280 100 Z" fill={accent + '18'} />
+          {[0,1,2,3].flatMap(row => [0,1,2,3].map(col => (
+            <SvgText key={`tl${row}${col}`} x={8+col*17} y={17+row*17} fill={accent+'22'} fontSize={12} textAnchor="middle">+</SvgText>
+          )))}
+          {[0,1,2,3].flatMap(row => [0,1,2,3].map(col => (
+            <SvgText key={`tr${row}${col}`} x={212+col*17} y={17+row*17} fill={accent+'22'} fontSize={12} textAnchor="middle">+</SvgText>
+          )))}
+        </Svg>
+      </View>
     );
   };
 
@@ -472,17 +474,23 @@ export default function HomeScreen({ navigation }: Props) {
         <View style={[StyleSheet.absoluteFillObject, styles.fifaOverlay]}>
           <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={handleCloseCard} />
 
-          <View style={{ alignItems: 'center', gap: 14 }} {...swipePan.panHandlers}>
+          <View style={{ width: 280, height: 390, position: 'relative' }}>
 
             {/* Front face */}
             <Animated.View
               style={[styles.fifaCard, { transform: [{ rotateY: frontRotate }], backfaceVisibility: 'hidden' }]}
               pointerEvents={cardFlipped ? 'none' : 'auto'}
+              {...(!cardFlipped ? swipePan.panHandlers : {})}
             >
               {renderFifaBg(card.tier, card.accent)}
               <View style={styles.fifaTopSection}>
+                {/* Medal fills the full area */}
+                <View style={styles.fifaMedalArea}>
+                  {renderMedal(card.tier, card.accent)}
+                </View>
+                {/* Info column overlaid top-left */}
                 <View style={styles.fifaLeftCol}>
-                  <Text style={[styles.fifaOvr, { color: card.accent }]}>{card.ovr}</Text>
+                  <Text style={[styles.fifaOvr, { color: card.accent }]} numberOfLines={1} adjustsFontSizeToFit>{card.ovr}</Text>
                   <Text style={[styles.fifaTierLabel, { color: card.textOnCard }]}>{card.tierLabel}</Text>
                   <Text style={[styles.fifaPos, { color: card.textOnCard + 'AA' }]}>{level.label.toUpperCase()}</Text>
                   <View style={{ marginTop: 10 }}>
@@ -492,9 +500,6 @@ export default function HomeScreen({ navigation }: Props) {
                       <SvgRect x={27} y={2} width={7} height={16} rx={2} fill={card.accent} />
                     </Svg>
                   </View>
-                </View>
-                <View style={styles.fifaMedalArea}>
-                  {renderMedal(card.tier, card.accent)}
                 </View>
               </View>
 
@@ -531,6 +536,7 @@ export default function HomeScreen({ navigation }: Props) {
             <Animated.View
               style={[styles.fifaCard, styles.fifaCardBack, { transform: [{ rotateY: backRotate }], backfaceVisibility: 'hidden' }]}
               pointerEvents={cardFlipped ? 'auto' : 'none'}
+              {...(cardFlipped ? swipePan.panHandlers : {})}
             >
               {renderFifaBg(card.tier, card.accent)}
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 10 }}>
@@ -685,27 +691,27 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', gap: 16,
   },
   fifaCard: {
-    width: 280, height: 380, borderRadius: 16, overflow: 'hidden',
+    width: 280, height: 390, borderRadius: 16, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 24 }, shadowOpacity: 0.75, shadowRadius: 40, elevation: 40,
   },
   fifaCardBack: {
     position: 'absolute', top: 0, left: 0,
   },
   fifaTopSection: {
-    flexDirection: 'row', height: 220, paddingTop: 14,
+    height: 222, width: '100%',
   },
   fifaLeftCol: {
-    width: 72, paddingLeft: 14, paddingTop: 2,
+    position: 'absolute', left: 10, top: 10, zIndex: 2, width: 78,
   },
-  fifaOvr: { fontSize: 54, fontWeight: '900', lineHeight: 54 },
+  fifaOvr: { fontSize: 54, fontWeight: '900' },
   fifaTierLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.6, marginTop: 2 },
   fifaPos: { fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginTop: 2 },
   fifaMedalArea: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingRight: 10,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
   },
   fifaNameBand: {
-    backgroundColor: 'rgba(0,0,0,0.72)', height: 40,
+    backgroundColor: 'rgba(0,0,0,0.75)', height: 44,
     justifyContent: 'center', alignItems: 'center',
     paddingHorizontal: 12,
   },
