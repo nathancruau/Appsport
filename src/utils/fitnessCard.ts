@@ -50,11 +50,11 @@ function scoreMuscle(stat: MuscleGroupStat): number {
 }
 
 const TIERS: { min: number; tier: FifaTier; label: string; cardBg: string; accent: string; text: string }[] = [
-  { min: 85, tier: 'toty',   label: 'TOTY',   cardBg: '#06090F', accent: '#FFD700', text: '#FFE566' },
-  { min: 75, tier: 'elite',  label: 'ÉLITE',  cardBg: '#120520', accent: '#BF5AF2', text: '#D88EFF' },
-  { min: 65, tier: 'gold',   label: 'OR',     cardBg: '#161200', accent: '#D4AF37', text: '#F5D060' },
-  { min: 50, tier: 'silver', label: 'ARGENT', cardBg: '#141820', accent: '#8AAABB', text: '#B0CDD8' },
-  { min:  0, tier: 'bronze', label: 'BRONZE', cardBg: '#160C04', accent: '#B07040', text: '#D49060' },
+  { min: 85, tier: 'toty',   label: 'TOTY',   cardBg: '#101828', accent: '#FFD700', text: '#FFE566' },
+  { min: 75, tier: 'elite',  label: 'ÉLITE',  cardBg: '#5020A0', accent: '#E8AAFF', text: '#F0D0FF' },
+  { min: 65, tier: 'gold',   label: 'OR',     cardBg: '#A07818', accent: '#5A3800', text: '#3A2200' },
+  { min: 50, tier: 'silver', label: 'ARGENT', cardBg: '#5A7A90', accent: '#1A3045', text: '#0A1828' },
+  { min:  0, tier: 'bronze', label: 'BRONZE', cardBg: '#8B4A14', accent: '#3A1400', text: '#2A0C00' },
 ];
 
 export function computeFitnessCardFromMuscles(

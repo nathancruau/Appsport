@@ -205,9 +205,10 @@ export default function HomeScreen({ navigation }: Props) {
 
   const swipePan = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 12 && Math.abs(gs.dx) > Math.abs(gs.dy),
-      onPanResponderRelease: (_, gs) => { if (Math.abs(gs.dx) > 44) flipCard(); },
+      onStartShouldSetPanResponder: () => true,
+      onShouldBlockNativeResponder: () => false,
+      onPanResponderTerminationRequest: () => true,
+      onPanResponderRelease: (_, gs) => { if (Math.abs(gs.dx) > 36) flipCard(); },
     })
   ).current;
 
@@ -288,32 +289,40 @@ export default function HomeScreen({ navigation }: Props) {
   };
 
   const renderFifaBg = (tier: FitnessCard['tier'], accent: string) => {
+    // c1=coin haut-gauche, c2=centre lumineux, c3=coin bas-droit
     const gradients: Record<string, [string, string, string]> = {
-      bronze: ['#2A0A00', '#7A3810', '#B06030'],
-      silver: ['#0A1420', '#1E3A54', '#4A6A80'],
-      gold:   ['#1E1000', '#6A4800', '#B08020'],
-      elite:  ['#080216', '#250850', '#4A1888'],
-      toty:   ['#000408', '#080F28', '#141E48'],
+      bronze: ['#8B4A14', '#D4844A', '#7A3808'],
+      silver: ['#5A7A90', '#A0C0D0', '#3A5870'],
+      gold:   ['#A07818', '#F0CC44', '#B09020'],
+      elite:  ['#5020A0', '#9050D0', '#380890'],
+      toty:   ['#101828', '#283A58', '#080F20'],
     };
     const [c1, c2, c3] = gradients[tier] ?? gradients.bronze;
+    // patterns visibles sur fond clair
+    const crossColor = tier === 'toty' || tier === 'elite' ? accent + '30' : 'rgba(0,0,0,0.12)';
+    const swoosh1 = tier === 'toty' || tier === 'elite' ? accent + '18' : 'rgba(255,255,255,0.18)';
+    const swoosh2 = tier === 'toty' || tier === 'elite' ? accent + '28' : 'rgba(255,255,255,0.28)';
     return (
       <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
         <Svg width={280} height={390} style={StyleSheet.absoluteFillObject as any}>
           <Defs>
-            <SvgLinearGradient id={`bg_${tier}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <SvgLinearGradient id={`bg_${tier}`} x1="20%" y1="0%" x2="80%" y2="100%">
               <Stop offset="0%" stopColor={c1} />
-              <Stop offset="50%" stopColor={c2} />
+              <Stop offset="45%" stopColor={c2} />
               <Stop offset="100%" stopColor={c3} />
             </SvgLinearGradient>
           </Defs>
           <SvgRect width="280" height="390" fill={`url(#bg_${tier})`} rx={16} />
-          <SvgPath d="M 280 0 L 90 0 L 280 180 Z" fill={accent + '12'} />
-          <SvgPath d="M 280 0 L 160 0 L 280 100 Z" fill={accent + '18'} />
+          {/* Swoosh top-right */}
+          <SvgPath d="M 280 0 L 95 0 L 280 185 Z" fill={swoosh1} />
+          <SvgPath d="M 280 0 L 165 0 L 280 105 Z" fill={swoosh2} />
+          {/* Cross pattern top-left */}
           {[0,1,2,3].flatMap(row => [0,1,2,3].map(col => (
-            <SvgText key={`tl${row}${col}`} x={8+col*17} y={17+row*17} fill={accent+'22'} fontSize={12} textAnchor="middle">+</SvgText>
+            <SvgText key={`tl${row}${col}`} x={9+col*18} y={18+row*18} fill={crossColor} fontSize={13} textAnchor="middle">+</SvgText>
           )))}
+          {/* Cross pattern top-right */}
           {[0,1,2,3].flatMap(row => [0,1,2,3].map(col => (
-            <SvgText key={`tr${row}${col}`} x={212+col*17} y={17+row*17} fill={accent+'22'} fontSize={12} textAnchor="middle">+</SvgText>
+            <SvgText key={`tr${row}${col}`} x={208+col*18} y={18+row*18} fill={crossColor} fontSize={13} textAnchor="middle">+</SvgText>
           )))}
         </Svg>
       </View>
@@ -504,12 +513,13 @@ export default function HomeScreen({ navigation }: Props) {
               </View>
 
               <View style={styles.fifaNameBand}>
-                <Text style={[styles.fifaName, { color: card.accent }]} numberOfLines={1}>
+                <Text style={[styles.fifaName, { color: card.tier === 'toty' || card.tier === 'elite' ? card.accent : '#FFFFFF' }]} numberOfLines={1}>
                   {user?.displayName?.split(' ')[0]?.toUpperCase() ?? 'ATHLÈTE'}
                 </Text>
               </View>
 
-              <View style={styles.fifaStatsGrid}>
+              {/* Stats sur fond légèrement sombre pour contraste */}
+              <View style={[styles.fifaStatsGrid, { backgroundColor: 'rgba(0,0,0,0.12)' }]}>
                 <View style={styles.fifaStatsCol}>
                   {card.attributes.slice(0, 3).map((attr) => (
                     <View key={attr.key} style={styles.fifaStatRow}>
@@ -541,10 +551,12 @@ export default function HomeScreen({ navigation }: Props) {
               {renderFifaBg(card.tier, card.accent)}
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 10 }}>
                 <Text style={[styles.fifaBackTitle, { color: card.textOnCard + '80' }]}>ANALYSE MUSCULAIRE</Text>
-                {card.radarData.length >= 3
-                  ? renderRadarChart(card.radarData, card.accent, card.textOnCard)
-                  : <Text style={[styles.fifaNoData, { color: card.textOnCard + '60' }]}>Pas assez de données</Text>
-                }
+                <View pointerEvents="none">
+                  {card.radarData.length >= 3
+                    ? renderRadarChart(card.radarData, card.accent, card.textOnCard)
+                    : <Text style={[styles.fifaNoData, { color: card.textOnCard + '60' }]}>Pas assez de données</Text>
+                  }
+                </View>
                 <Text style={[styles.fifaSwipeHint, { color: card.textOnCard + '50', marginTop: 4 }]}>← glisser pour revenir →</Text>
               </View>
             </Animated.View>
